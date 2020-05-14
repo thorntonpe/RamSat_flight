@@ -10,6 +10,7 @@
 #include "PIC_config.h"
 #include "init.h"
 #include "uart.h"
+#include "sfm.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -27,7 +28,7 @@ int main(void) {
     T1CON = 0x8030;
     long wait;          // Timer trigger
 
-    // Initialization parameters for UART2 (He-100 radio or USB interfaces)
+    // Set desired baud rates for UART2 (He-100 radio or USB interfaces)
 #ifdef HE100
     init_data.u2br_request = 9600;   // UART2 desired baud rate for radio
 #endif
@@ -35,6 +36,11 @@ int main(void) {
     init_data.u2br_request = 115200; // UART2 desired baud rate for COM port
     char msg[128];      // character string for messages to user via COM port
 #endif
+    
+    // set desired clock speeds for SPI peripherals
+    init_data.spi1_fsck = 250000;  // SD card, initial speed (250kHz)
+    init_data.spi2_fsck = 4000000; // Arducams (4MHz)
+    init_data.spi3_fsck = 4000000; // Serial Flash Memory (4MHz)
     
     // Initialize the PIC peripherals
     init_peripherals(&init_data);
@@ -49,6 +55,9 @@ int main(void) {
     wait = 1000 * DELAYMSEC;
     TMR1 = 0;
     while (TMR1 < wait);
+    
+    // test the serial flash memory
+    int sfm_iserror = test_sfm();
 
 #ifdef USB
     // Common header for ground testing output
@@ -58,6 +67,20 @@ int main(void) {
     sprintf(msg,"UART2: Requested baud rate = %ld", init_data.u2br_request);
     write_string2(msg);
     sprintf(msg,"UART2: Actual baud rate    = %ld", init_data.u2br_actual);
+    write_string2(msg);
+    sprintf(msg,"SPI1: clock frequency = %ld", init_data.spi1_fsck);
+    write_string2(msg);
+    sprintf(msg,"SPI1: clock prescalar = %ld", init_data.spi1_prescalar);
+    write_string2(msg);
+    sprintf(msg,"SPI2: clock frequency = %ld", init_data.spi2_fsck);
+    write_string2(msg);
+    sprintf(msg,"SPI2: clock prescalar = %ld", init_data.spi2_prescalar);
+    write_string2(msg);
+    sprintf(msg,"SPI3: clock frequency = %ld", init_data.spi3_fsck);
+    write_string2(msg);
+    sprintf(msg,"SPI3: clock prescalar = %ld", init_data.spi3_prescalar);
+    write_string2(msg);
+    sprintf(msg,"SFM Test: is_error = %d", sfm_iserror);
     write_string2(msg);
 #endif
     

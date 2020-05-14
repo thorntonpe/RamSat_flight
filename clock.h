@@ -8,6 +8,7 @@
 #define FOSC 32000000    // define FOSC=clock speed in Hz
 // a standard 1 millisecond delay for TIMER1, assuming 1:256 prescalar
 #define DELAYMSEC 62L    // = 0.001 * FOSC / (2 * 256)
+#define TMR1MSEC 62L     // = 0.001 * FOSC / (2 * 256)
 
 
 
