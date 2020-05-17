@@ -1,15 +1,15 @@
 /*
- * File:    init.c
- * Author:  Peter Thornton
- * Created: 13 May 2020
- * Purpose: Initialize all peripherals
+ * File:       init.c
+ * Author:     Peter Thornton
+ * Purpose:    Initialize all peripherals
+ * Created on: 13 May 2020
  *  
 */
 
 #include "xc.h"
-#include "init.h"
 #include "uart.h"
 #include "spi.h"
+#include "init.h"
 
 void init_peripherals(init_data_type *init_data_p)
 {

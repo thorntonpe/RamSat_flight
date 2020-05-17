@@ -1,8 +1,8 @@
 /* 
- * File:     .h
- * Author:   Peter Thornton
+ * File:       .h
+ * Author:     Peter Thornton
  * Purpose:  
- * Created:  
+ * Created on:  
  */
 
 // function prototypes 

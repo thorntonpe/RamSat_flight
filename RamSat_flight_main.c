@@ -1,8 +1,8 @@
 /*
- * File:    RamSat_MBM_test1_main.c
- * Author:  Peter Thornton
- * Purpose: RamSat flight software
- * Created: 12 May 2020
+ * File:       RamSat_MBM_test1_main.c
+ * Author:     Peter Thornton
+ * Purpose:    RamSat flight software
+ * Created on: 12 May 2020
  */
 
 
@@ -11,6 +11,7 @@
 #include "init.h"
 #include "uart.h"
 #include "sfm.h"
+#include "sd_test.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -27,6 +28,7 @@ int main(void) {
     // Initialize TIMER1 (16-bit), using system clock and 1:256 prescalar
     T1CON = 0x8030;
     long wait;          // Timer trigger
+    int ui;             // user input, for ground testing
 
     // Set desired baud rates for UART2 (He-100 radio or USB interfaces)
 #ifdef HE100
@@ -56,9 +58,13 @@ int main(void) {
     TMR1 = 0;
     while (TMR1 < wait);
     
+#ifdef USB
+#endif
+    
     // test the serial flash memory
     int sfm_iserror = test_sfm();
-
+    
+    
 #ifdef USB
     // Common header for ground testing output
     write_string2("---------------------------------------------");
@@ -80,10 +86,24 @@ int main(void) {
     write_string2(msg);
     sprintf(msg,"SPI3: clock prescalar = %ld", init_data.spi3_prescalar);
     write_string2(msg);
-    sprintf(msg,"SFM Test: is_error = %d", sfm_iserror);
-    write_string2(msg);
-#endif
     
+    ui = read_char2(); // stall and wait for USB input from terminal, for ground testing
+
+    sprintf(msg,"SFM: Test is_error = %d", sfm_iserror);
+    write_string2(msg);
+
+    ui = read_char2(); // stall and wait for USB input from terminal, for ground testing
+    
+    // test SD write-read
+    int sd_iserror = test_sd_write_read();
+    sprintf(msg,"SD: Test is_error = %d", sd_iserror);
+    write_string2(msg);
+    
+#endif
+
+    // test the SD card
+    // test_sd_mount_describe();
+
     // hold here
     while (1);
 

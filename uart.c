@@ -1,8 +1,8 @@
 /*
- * File:    uart.c
- * Author:  Peter Thornton
- * Purpose: Initialize and use the UART2 peripheral (USB or He-100 transceiver)
- * Created: 13 May 2020
+ * File:       uart.c
+ * Author:     Peter Thornton
+ * Purpose:    Initialize and use the UART2 peripheral (USB or He-100 transceiver)
+ * Created on: 13 May 2020
  *  
 */
 
