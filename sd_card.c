@@ -637,18 +637,21 @@ ExitOpen:
 int fdeleteM( const char *filename, const char *mode)
 {
     char c;
-    int i, r, e;
+    int i, r;
+    unsigned e;
+    unsigned short cur_cluster, next_cluster;
     unsigned char *b;       
-    MFILE *fp;              
+    MFILE *fp;
+    
 
-    // 1.  check if storage device is mounted 
+    // check if storage device is mounted 
     if ( D == NULL)       // unmounted
     {
         FError = FE_MEDIA_NOT_MNTD;
         return FError;
     }
     
-    // 2. allocate a buffer for the file
+    // allocate a buffer for the file
     b = (unsigned char*)malloc( 512);
     if ( b == NULL)
     {   
@@ -656,7 +659,7 @@ int fdeleteM( const char *filename, const char *mode)
         return FError;
     }
     
-    // 3. allocate a MFILE structure on the heap
+    // allocate a MFILE structure on the heap
     fp = (MFILE *) malloc( sizeof( MFILE));
     if ( fp == NULL)            // report an error  
     {   
@@ -665,11 +668,11 @@ int fdeleteM( const char *filename, const char *mode)
         return FError;
     }
     
-    // 4. set pointers to the MEDIA structure and buffer
+    // set pointers to the MEDIA structure and buffer
     fp->mda = D;
     fp->buffer = b;
 
-    // 5. format the filename into name 
+    // format the filename into name 
     for( i=0; i<8; i++)
     {
         // read a char and convert to upper case
@@ -683,7 +686,7 @@ int fdeleteM( const char *filename, const char *mode)
     // if short fill the rest up to 8 with spaces
     while ( i<8) fp->name[i++] = ' ';
 
-    // 6. if there is an extension
+    // if there is an extension
     if ( c != '\0') 
     {    
         for( i=8; i<11; i++)
@@ -701,54 +704,77 @@ int fdeleteM( const char *filename, const char *mode)
         while ( i<11) fp->name[i++] = ' ';
     } // if
 
-    // 7. copy the file mode character  (r, w) 
+    // copy the file mode character  (d for delete) 
     if (*mode == 'd')
         fp->mode = *mode;
     else
     { 
         FError = FE_INVALID_MODE;
-        goto ExitOpen;
+        goto ExitDelete;
     }
 
-    // 8. Search for the file in current directory
+    // Search for the file in current directory
     if ( ( r = FindDIR( fp)) == FAIL)
     { 
         FError = FE_FIND_ERROR;
-        goto ExitOpen;
+        goto ExitDelete;
     }
     
-    // 10. found or not found 
+    // found or not found 
     if  ( r == NOT_FOUND)
     {
         FError = FE_FILE_NOT_FOUND;
-        goto ExitOpen;
+        goto ExitDelete;
     }
     else
     {  // found             
-    // 10.2 set current cluster pointer on first cluster
-        fp->ccls = fp->cluster;     
-
-    // 10.3 read a sector of data from the file
-        if ( !ReadDATA( fp))
+        // set current cluster pointer on first cluster
+        fp->ccls = fp->cluster;
+        
+        // at this point, fp->buffer holds the root directory sector containing
+        // the target file. Modify the first character of filename with the 
+        // "deleted file" flag value, and write the entire sector back to root dir.
+        // First determine the offset in current buffer
+        e = (fp->entry&0xf) * DIR_ESIZE;
+        // Then write the deleted flag to first char of file name
+        fp->buffer[ e + DIR_NAME] = DIR_DEL;
+        // Now write the modified buffer back to root dir sector
+        if ( !WriteDIR( fp, fp->entry))
         {
-            goto ExitOpen;
+            FError = FE_IDE_ERROR;
+            goto ExitDelete;
         }
-
-    // 10.4 determine how much data is really inside buffer
-        if ( fp->size-fp->seek < 512)
-            fp->top = fp->size - fp->seek;
-        else
-            fp->top = 512;
+        
+        // Begin traverse of FAT clusters, clearing entries for this file
+        // (in all FAT copies)
+        cur_cluster = fp->cluster;
+        while (1)
+        {
+            next_cluster = ReadFAT(fp, cur_cluster);
+            if (!WriteFAT(fp, cur_cluster, 0))
+            {
+                FError = FE_WFAT_ERROR;
+                goto ExitDelete;
+            }
+            // advance if this is not the end of the cluster chain
+            if (next_cluster != FAT_EOF)
+            {
+                cur_cluster = next_cluster;
+            }
+            else  // free memory and return success
+            {
+                free( fp->buffer); 
+                free( fp);
+                return 0;
+            }
+        }
     } // found
-  
-    // 12. Exit with success    
-    return fp;
-
-    // 13. Exit with error
-ExitOpen:
+    
+// Exit with error
+ExitDelete:
     free( fp->buffer); 
     free( fp);
-    return NULL;
+    return FError;
         
 } // fdeleteM
 

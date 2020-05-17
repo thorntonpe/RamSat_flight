@@ -31,8 +31,9 @@ extern char FError; 	        // mailbox for error reporting
 #define FE_CANNOT_INIT     15   // Cannot init the CARD
 #define FE_CANNOT_READ_MBR 16   // Cannot read the MBR 
 #define FE_MALLOC_FAILED   17   // Could not allocate memory
-#define FE_INVALID_MODE    18   // Mode was not r.w.
+#define FE_INVALID_MODE    18   // Mode was not r.w.d.
 #define FE_FIND_ERROR      19   // Failure during FILE search
+#define FE_WFAT_ERROR      20   // Failed during WriteFAT()
 
 typedef struct { 
     LBA     fat;                // lba of FAT
@@ -103,6 +104,7 @@ MEDIA * SD_mount( void);
 void    SD_umount( void);
 
 MFILE *  fopenM  ( const char *name, const char *mode);
+int fdeleteM  ( const char *name, const char *mode);
 unsigned freadM  ( void * dest, unsigned count, MFILE *);
 unsigned fwriteM ( void * src, unsigned count, MFILE *);
 unsigned fcloseM ( MFILE *);

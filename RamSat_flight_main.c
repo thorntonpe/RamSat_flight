@@ -58,11 +58,13 @@ int main(void) {
     TMR1 = 0;
     while (TMR1 < wait);
     
-#ifdef USB
-#endif
-    
-    // test the serial flash memory
+    // Tests of components that use PIC peripherals
+    // These might later get packaged as a single test routine with telemetry
+    // SPI components:
+    //     Serial flash memory: write-read
     int sfm_iserror = test_sfm();
+    //     SD card: write-read-delete
+    int sd_iserror = test_sd_write_read_delete();
     
     
 #ifdef USB
@@ -86,16 +88,8 @@ int main(void) {
     write_string2(msg);
     sprintf(msg,"SPI3: clock prescalar = %ld", init_data.spi3_prescalar);
     write_string2(msg);
-    
-    ui = read_char2(); // stall and wait for USB input from terminal, for ground testing
-
     sprintf(msg,"SFM: Test is_error = %d", sfm_iserror);
     write_string2(msg);
-
-    ui = read_char2(); // stall and wait for USB input from terminal, for ground testing
-    
-    // test SD write-read
-    int sd_iserror = test_sd_write_read();
     sprintf(msg,"SD: Test is_error = %d", sd_iserror);
     write_string2(msg);
     

@@ -68,9 +68,10 @@ void test_sd_mount_describe(void)
     if (!err) SD_umount();
 }
 
-// test: mount SD card, write a short file, read the contents of the file
+// Mount SD card, write a short file, read the contents of the file
+// and then delete the file.
 // This routine can be used for testing in flight
-int test_sd_write_read(void)
+int test_sd_write_read_delete(void)
 {
     int err = 0;
     char test_text_w[15]; // character string to hold sample text written to file
@@ -134,6 +135,40 @@ int test_sd_write_read(void)
 
     // close the file
     fcloseM(fp1);
+    
+    // delete the file
+    if (!err)
+    {
+        err = fdeleteM(fname, "d");
+    }
+    
+    // Unmount the SD card
+    SD_umount();
+    
+    return err;
+}
+
+// test: mount SD card, write a short file, read the contents of the file
+// This routine writes to USB, only for ground testing
+int test_sd_delete(void)
+{
+    int err = 0;
+    char fname[12];       // character string to hold filename, testing SD card
+    
+    // make sure fname is a null terminated string
+    memset(fname, '\0', 12);
+    
+    // Attempt to mount the SD card
+    sd_dat = SD_mount();
+    if (!sd_dat)
+    {
+        err = FError;
+        return err;
+    }
+    
+    // specify a file to delete
+    sprintf(fname,"SD_DEL.TXT");
+    err = fdeleteM(fname, "d");
     
     // Unmount the SD card
     SD_umount();

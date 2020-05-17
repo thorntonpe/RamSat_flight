@@ -8,7 +8,8 @@
 // function prototypes 
 int test_sd_mount_umount(void);
 void test_sd_mount_describe(void);
-int test_sd_write_read(void);
+int test_sd_write_read_delete(void);
+int test_sd_delete(void);
 
 
 
