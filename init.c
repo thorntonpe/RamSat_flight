@@ -1,7 +1,7 @@
 /*
  * File:       init.c
  * Author:     Peter Thornton
- * Purpose:    Initialize all peripherals
+ * Purpose:    Initialize all required PIC24F peripherals
  * Created on: 13 May 2020
  *  
 */
@@ -9,6 +9,7 @@
 #include "xc.h"
 #include "uart.h"
 #include "spi.h"
+#include "i2c.h"
 #include "init.h"
 
 void init_peripherals(init_data_type *init_data_p)
@@ -23,4 +24,9 @@ void init_peripherals(init_data_type *init_data_p)
     init_data_p->spi1_prescalar = init_spi1(FOSC, init_data_p->spi1_fsck);
     init_data_p->spi2_prescalar = init_spi2(FOSC, init_data_p->spi2_fsck);
     init_data_p->spi3_prescalar = init_spi3(FOSC, init_data_p->spi3_fsck);
+    // initialize the I2C peripherals
+    // I2C 1 used for: RTC, iMTQ, EPS, Bat, ANTS, Arducam1
+    // I2C 2 used for: Arducam2
+    init_data_p->brg1_reload = init_i2c1(FOSC, init_data_p->i2c1br);
+    init_data_p->brg2_reload = init_i2c2(FOSC, init_data_p->i2c2br);
 }

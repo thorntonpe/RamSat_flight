@@ -18,6 +18,10 @@ typedef struct
     long spi2_fsck;      // SPI2 clock speed
     long spi3_prescalar; // SPI3 clock prescalar
     long spi3_fsck;      // SPI3 clock speed    
+    long i2c1br;         // desired I2C_1 baud rate = 100 kHz
+    long brg1_reload;    // reload value for I2C_1 BRG
+    long i2c2br;         // desired I2C_2 baud rate = 100 kHz
+    long brg2_reload;    // reload value for I2C_2 BRG
 } init_data_type;
 
 // function prototypes

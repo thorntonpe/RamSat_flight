@@ -12,6 +12,7 @@
 #include "uart.h"
 #include "sfm.h"
 #include "sd_test.h"
+#include "rtc.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -40,11 +41,17 @@ int main(void) {
 #endif
     
     // set desired clock speeds for SPI peripherals
-    init_data.spi1_fsck = 250000;  // SD card, initial speed (250kHz)
+    init_data.spi1_fsck = 250000;  // SD card, initial speed (250kHz) **check re-mount**
     init_data.spi2_fsck = 4000000; // Arducams (4MHz)
     init_data.spi3_fsck = 4000000; // Serial Flash Memory (4MHz)
+
+    // set desired data rate for I2C peripherals
+    // I2C 1 used for: RTC, iMTQ, EPS, Bat, ANTS, Arducam1
+    // I2C 2 used for: Arducam2
+    init_data.i2c1br = 100000;  // desired I2C_1 baud rate = 100 kHz
+    init_data.i2c2br = 100000;  // desired I2C_2 baud rate = 100 kHz
     
-    // Initialize the PIC peripherals
+    // Initialize the PIC24F peripherals
     init_peripherals(&init_data);
 
 #ifdef USB
@@ -93,10 +100,10 @@ int main(void) {
     sprintf(msg,"SD: Test is_error = %d", sd_iserror);
     write_string2(msg);
     
+    rtc_clearhalt();
+    rtc_test_read();
+    
 #endif
-
-    // test the SD card
-    // test_sd_mount_describe();
 
     // hold here
     while (1);
