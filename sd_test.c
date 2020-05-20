@@ -148,6 +148,55 @@ int test_sd_write_read_delete(void)
     return err;
 }
 
+// Mount SD card, write a short file
+// This routine can be used for testing in flight, but will leave the file on disk
+int test_sd_write(void)
+{
+    int err = 0;
+    char test_text_w[15]; // character string to hold sample text written to file
+    char fname[12];       // character string to hold filename, testing SD card
+    unsigned int ntrans;  //number of bytes to write/read
+    unsigned int nbw;     //number of bytes written to file
+    
+    // make sure fname is a null terminated string
+    memset(fname, '\0', 12);
+    
+    // Attempt to mount the SD card
+    sd_dat = SD_mount();
+    if (!sd_dat)
+    {
+        err = FError;
+        return err;
+    }
+    
+    // open a file for writing
+    sprintf(fname,"SD_W2.TXT");
+    fp1 = fopenM(fname, "w");
+    if (!fp1)
+    {
+        err = FError;
+        return err;
+    }
+    
+    // write ntrans bytes to file
+    sprintf(test_text_w,"SD write test");
+    ntrans = 13;
+    nbw = fwriteM(test_text_w, ntrans, fp1);
+    if (nbw != ntrans)
+    {
+        err = 1;
+        return err;
+    }
+    
+    // close the file
+    fcloseM(fp1);
+    
+    // Unmount the SD card
+    SD_umount();
+    
+    return err;
+}
+
 // test: mount SD card, write a short file, read the contents of the file
 // This routine writes to USB, only for ground testing
 int test_sd_delete(void)

@@ -10,6 +10,7 @@
 #include "xc.h"
 #include "clock.h"
 #include "spi.h"
+#include "datetime.h"
 #include "sd_card.h"
 #include <stdlib.h>     // malloc...
 #include <ctype.h>      // toupper...
@@ -430,6 +431,7 @@ MFILE *fopenM( const char *filename, const char *mode)
 {
     char c;
     int i, r, e;
+    unsigned short date, time;
     unsigned char *b;       
     MFILE *fp;              
 
@@ -580,13 +582,15 @@ MFILE *fopenM( const char *filename, const char *mode)
                         fp->buffer[ e + i]  = 0;
         
                 // 11.4.4 set date and time
-                fp->date = 0x378A; // Dec 10th, 2007
+                // read the RTC to get the current date and time in FAT 16-bit format
+                get_fatdatetime(&date, &time);
+                fp->date = date; 
                 fp->buffer[ e + DIR_CDATE]  = fp->date;
                 fp->buffer[ e + DIR_CDATE+1]= fp->date>>8;
                 fp->buffer[ e + DIR_DATE]  = fp->date;
                 fp->buffer[ e + DIR_DATE+1]= fp->date>>8;
 
-                fp->time = 0x6000; // 12:00:00 PM
+                fp->time = time; 
                 fp->buffer[ e + DIR_CTIME]  = fp->time;
                 fp->buffer[ e + DIR_CTIME+1]= fp->time>>8;
                 fp->buffer[ e + DIR_TIME]  = fp->time+1;

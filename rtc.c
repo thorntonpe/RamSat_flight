@@ -46,13 +46,21 @@ void rtc_write_data(int nbytes, unsigned char start_reg)
     stop_i2c1(RTC_DELAY);
 }
 
-// Read the specified number of bytes from the RTC device into rtc_data array.
-// The device allows read to start from arbitrary position, but for now assume it
-// starts in position 0x00.
-void rtc_read_data(int nbytes)
+// Read the specified number of bytes from the RTC device into out array.
+// The device allows read to start from arbitrary position, given as firstreg.
+// Returns 1 for error, 0 for no error.
+int rtc_read_data(int firstreg, int nbytes, unsigned char *out)
 {
+    int err = 0;
     int i;
     int rcv;
+    
+    // make sure the input parameters are in valid range for RTC
+    if ((firstreg > 0x13) || (firstreg+nbytes > 0x14))
+    {
+        err = 1;
+        return err;
+    }
     
     // ensure i2c bus is in idle state
     idle_i2c1();
@@ -61,7 +69,7 @@ void rtc_read_data(int nbytes)
     // even though this is a read, begin with a write to send the starting register
     // transmit device address byte with write flag
     transmit_i2c1(rtc_add_w);
-    transmit_i2c1(0x00);
+    transmit_i2c1(firstreg);
     // send a new start signal to initiate the read operation
     start_i2c1();
     // transmit address byte with read flag
@@ -71,14 +79,16 @@ void rtc_read_data(int nbytes)
     for (i=0 ; i<nbytes-1 ; i++)
     {
         receive_i2c1(&rcv);
-        rtc_data[i] = rcv;
+        *out++ = rcv;
     }
     // receive with nack on last received byte
     receive_i2c1_nack(&rcv);
-    rtc_data[i] = rcv;
+    *out = rcv;
     
     // initiate a stop and wait for it to complete
     stop_i2c1(RTC_DELAY);
+    
+    return err;
 }
 
 // a test function that returns the first nbytes of data from RTC registers
@@ -86,14 +96,15 @@ void rtc_test_read(void)
 {
     int i;
     int nbytes=20;
+    unsigned char regvals[20];
     char msg[128];      // character string for messages to user via COM port
     
     // read the first nbytes from RTC registers
-    rtc_read_data(nbytes);
-    // copy the local data into external array
+    rtc_read_data(0x00, nbytes, regvals);
+    // write the register values to USB
     for (i=0 ; i<20 ; i++)
     {
-        sprintf(msg,"RTC: reg %02d = 0x%02x",i, rtc_data[i]);
+        sprintf(msg,"RTC: reg %02d = 0x%02x",i, regvals[i]);
         write_string2(msg);
     }
 }

@@ -13,6 +13,7 @@
 #include "sfm.h"
 #include "sd_test.h"
 #include "rtc.h"
+#include "datetime.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -101,7 +102,10 @@ int main(void) {
     write_string2(msg);
     
     rtc_clearhalt();
-    rtc_test_read();
+    char isodatetime[25];
+    get_isodatetime(isodatetime);
+    write_string2(isodatetime);
+    
     
 #endif
 

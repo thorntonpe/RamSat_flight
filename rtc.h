@@ -5,6 +5,7 @@
  * Created on:  18 May 2020
  */
 
+int rtc_read_data(int firstreg, int nbytes, unsigned char *out);
 void rtc_test_read(void);
 void rtc_test_set(void);
 void rtc_clearhalt(void);
