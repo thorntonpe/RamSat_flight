@@ -132,6 +132,54 @@ int get_fatdatetime(unsigned short *date, unsigned short *time)
         *time = 0;
     }
     return err;
+}
+
+// Convert the time from RTC to a Julian date, assuming that the RTC is on UTC.
+int get_juliandate(double *jdate)
+{
+    int err = 0;
+    int firstreg = 0x00;
+    int nregs = 8;
+    unsigned char rtc_data[8];
+    int year, mon, day, hour, min, sec;
+    long int y, m, d;
+    double h, n, s;
+    long int jd = 0;
+    double frac = 0.0;
     
+    // read the day, month, and year from RTC //
+    err = rtc_read_data(firstreg, nregs, rtc_data);
+    if (!err)
+    {
+        // format the ISO 8601 date
+        year = 2000 + (10 * (rtc_data[7]>>4 & 0xf)) + (rtc_data[7] & 0x0f);
+        mon  = (10 * (rtc_data[6]>>4 & 0x1)) + (rtc_data[6] & 0x0f);
+        day  = (10 * (rtc_data[5]>>4 & 0x3)) + (rtc_data[5] & 0x0f);
+        hour = (10 * (rtc_data[3]>>4 & 0x3)) + (rtc_data[3] & 0x0f);
+        min  = (10 * (rtc_data[2]>>4 & 0x7)) + (rtc_data[2] & 0x0f);
+        sec =  (10 * (rtc_data[1]>>4 & 0x7)) + (rtc_data[1] & 0x0f);
+        y = (long)year;
+        m = (long)mon;
+        d = (long)day;
+        h = (double)hour;
+        n = (double)min;
+        s = (double)sec;
+        y = y + 8000L;
+        if (m < 3)
+        {
+            y = y - 1L;
+            m = m + 12L;
+        }
+        
+        jd = (y*365L) + (y/4L) - (y/100L) + (y/400L) - 1200820L + (m*153L+3L)/5L - 92L + d - 1L;
+        frac = ((h-12.0)+(n/60.0)+(s/3600.0))/24.0;
+        *jdate = (double)jd + frac;
+    }
+    else
+    {
+        // on error, return an obviously bogus julian date
+        *jdate = -1.0;
+    }
+    return err;
 }
 

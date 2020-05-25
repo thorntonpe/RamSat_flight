@@ -14,6 +14,7 @@
 #include "sd_test.h"
 #include "rtc.h"
 #include "datetime.h"
+#include "adc.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -101,11 +102,30 @@ int main(void) {
     sprintf(msg,"SD: Test is_error = %d", sd_iserror);
     write_string2(msg);
     
+    // test the RTC and ISO8601 formatted datetime string function
     rtc_clearhalt();
     char isodatetime[25];
     get_isodatetime(isodatetime);
     write_string2(isodatetime);
+    // test the julian date function
+    double jdate;
+    get_juliandate(&jdate);
+    sprintf(msg,"Jdate = %.5lf",jdate);
+    write_string2(msg);
     
+    // test ADC read from channel AN15, feeding 3.3V from port B11
+    _ANSB11 = 0;
+    _TRISB11 = 0;
+    _RB11 = 1;
+    int ad_result = adc_test_ssac();
+    sprintf(msg,"ADC: AN12 = %d",ad_result);
+    write_string2(msg);
+    sprintf(msg,"ADC: AN13 = %d",ADC1BUF1);
+    write_string2(msg);
+    sprintf(msg,"ADC: AN14 = %d",ADC1BUF2);
+    write_string2(msg);
+    sprintf(msg,"ADC: AN15 = %d",ADC1BUF3);
+    write_string2(msg);
     
 #endif
 
