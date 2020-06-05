@@ -182,8 +182,8 @@ long init_spi2(long fosc, long fsck)
     SPI2CON1bits.PPRE   = pre1;  // primary prescalar for serial clock, set above.
     
     // set the chip select lines high (deselected) before enabling device
-    CS_CAM1 = 1;
-    CS_CAM2 = 1;
+    //CS_CAM1 = 1;
+    //CS_CAM2 = 1;
     
     // clear the receive overflow status and enable the SPI2 peripheral
     SPI2STATbits.SPIROV = 0;

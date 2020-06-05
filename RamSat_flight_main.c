@@ -15,6 +15,8 @@
 #include "rtc.h"
 #include "datetime.h"
 #include "adc.h"
+#include "eps_bat.h"
+#include "arducam_user.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -67,6 +69,9 @@ int main(void) {
     TMR1 = 0;
     while (TMR1 < wait);
     
+    // switch on power to the cameras
+    unsigned char cameras_on_status = eps_cameras_on();
+    
     // Tests of components that use PIC peripherals
     // These might later get packaged as a single test routine with telemetry
     // SPI components:
@@ -103,6 +108,9 @@ int main(void) {
     write_string2(msg);
     
     // test the RTC and ISO8601 formatted datetime string function
+    write_string2("-----------------------------------");
+    write_string2("Test: Real Time Clock and Julian Date");
+    write_string2("-----------------------------------");
     rtc_clearhalt();
     char isodatetime[25];
     get_isodatetime(isodatetime);
@@ -113,20 +121,61 @@ int main(void) {
     sprintf(msg,"Jdate = %.5lf",jdate);
     write_string2(msg);
     
-    // test ADC read from channel AN15, feeding 3.3V from port B11
-    _ANSB11 = 0;
-    _TRISB11 = 0;
-    _RB11 = 1;
+    // test ADC read from channels AN8-AN15
+    write_string2("-----------------------------------");
+    write_string2("Test: Sun Sensor Analog to Digital Conversion");
+    write_string2("-----------------------------------");
     int ad_result = adc_test_ssac();
-    sprintf(msg,"ADC: AN12 = %d",ad_result);
+    sprintf(msg,"ADC: AN8  = %d",ad_result);
     write_string2(msg);
-    sprintf(msg,"ADC: AN13 = %d",ADC1BUF1);
+    sprintf(msg,"ADC: AN9  = %d",ADC1BUF1);
     write_string2(msg);
-    sprintf(msg,"ADC: AN14 = %d",ADC1BUF2);
+    sprintf(msg,"ADC: AN10 = %d",ADC1BUF2);
     write_string2(msg);
-    sprintf(msg,"ADC: AN15 = %d",ADC1BUF3);
+    sprintf(msg,"ADC: AN11 = %d",ADC1BUF3);
+    write_string2(msg);
+    sprintf(msg,"ADC: AN12 = %d",ADC1BUF4);
+    write_string2(msg);
+    sprintf(msg,"ADC: AN13 = %d",ADC1BUF5);
+    write_string2(msg);
+    sprintf(msg,"ADC: AN14 = %d",ADC1BUF6);
+    write_string2(msg);
+    sprintf(msg,"ADC: AN15 = %d",ADC1BUF7);
     write_string2(msg);
     
+    // test EPS and battery telemetry
+    write_string2("-----------------------------------");
+    write_string2("Test: EPS / Battery Telemetry");
+    write_string2("-----------------------------------");
+    unsigned char eps_status = eps_get_status();
+    sprintf(msg,"EPS status byte = 0x%02x", eps_status);
+    write_string2(msg);
+    unsigned char bat_status = bat_get_status();
+    sprintf(msg,"Bat status byte = 0x%02x", bat_status);
+    write_string2(msg);
+    float batv = eps_get_batv();
+    sprintf(msg,"Battery voltage = %.2f",batv);
+    write_string2(msg);
+    
+    // test camera interfaces
+    write_string2("-----------------------------------");
+    write_string2("Test: Arducam Interfaces and Operation");
+    write_string2("-----------------------------------");
+    sprintf(msg,"Cameras power on status = 0x%02x",cameras_on_status);
+    write_string2(msg);
+    // test the arducam SPI interface with write/read
+    int arducam_spi_iserror = test_arducam_spi();
+    sprintf(msg,"Arducam SPI: Test is_error = %d", arducam_spi_iserror);
+    write_string2(msg);
+    // initialize arduchip and OV2640 sensor for both cameras
+    int arducam_init_iserror = init_arducam();
+    sprintf(msg,"Arducam Init: Test is_error = %d", arducam_init_iserror);
+    write_string2(msg);
+    // start the image capture test loop
+    int arducam_capture_iserror = test_arducam_capture();
+    sprintf(msg,"Arducam Capture: Test is_error = %d", arducam_capture_iserror);
+    write_string2(msg);
+
 #endif
 
     // hold here

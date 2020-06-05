@@ -24,8 +24,8 @@ int init_adc(void)
     // AD1CON2
     _VCFG = 0;     // use internal V_DD and V_SS as reference voltages (3.3V, GND)
     _CSCNA = 1;    // use single channel (CH0SA) for MUX A input if clear, scan if set
-    _SMPI = 3;     // interrupt after 4th sample/convert
-    _BUFM = 0;     // when set, buffer configured as two eight-word buffers (0-7, 8-F)
+    _SMPI = 7;     // interrupt after 7th sample/convert
+    _BUFM = 0;     // 0 = buffer configured as one 16-word buffer (0 to FF)
     _ALTS = 0;     // always use MUX A input multiplexer settings
     // AD1CON3
     _ADRC = 0;     // Clock derived from system clock
@@ -37,17 +37,25 @@ int init_adc(void)
     _CH0NA = 0;    // Negative input is VT-, as given by _VCFG
     _CH0SA = 15;   // Sample AN15 for MUX A (if single sample)
     // AD1CSSL
-    AD1CSSL = 0xf000;// set AN15-12 for sequential scan on MUX A
+    AD1CSSL = 0xff00;// set AN15-8 for sequential scan on MUX A
     
     // set Port B analog input pins with ANS and TRIS
     _ANSB15 = 1;
     _ANSB14 = 1;
     _ANSB13 = 1;
     _ANSB12 = 1;
+    _ANSB11 = 1;
+    _ANSB10 = 1;
+    _ANSB9  = 1;
+    _ANSB8  = 1;
     _TRISB15 = 1;
     _TRISB14 = 1;
     _TRISB13 = 1;
     _TRISB12 = 1;
+    _TRISB11 = 1;
+    _TRISB10 = 1;
+    _TRISB9  = 1;
+    _TRISB8  = 1;
     
     // turn the module on
     _ADON = 1;
@@ -65,6 +73,7 @@ int adc_test_msac(void)
     return result;
 }
 
+// a multi-channel test for the ADC: scan sample, auto conversion
 int adc_test_ssac(void)
 {
     int result;

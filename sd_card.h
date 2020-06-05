@@ -8,6 +8,7 @@
 #define FALSE   0
 #define TRUE    !FALSE
 #define FAIL    0
+#define SDBUFSIZE 1024  // buffer size for writing data to files
 
 typedef unsigned long LBA;
 
