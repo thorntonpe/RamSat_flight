@@ -534,6 +534,37 @@ unsigned char eps_cameras_off()
     // the useful status byte is the second byte returned
     return response[1];    
 }
+// Turn on PDM Switch #8, 3.3V power to Antenna
+unsigned char eps_antenna_on()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x50;
+    command[1] = 0x08;
+    int delay = 1;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    // the useful status byte is the second byte returned
+    return response[1];    
+}
+
+// Turn off PDM Switch #8, 3.3V power to Antenna
+unsigned char eps_antenna_off()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x51;
+    command[1] = 0x08;
+    int delay = 1;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    // the useful status byte is the second byte returned
+    return response[1];    
+}
 
 // battery telemetry: status byte
 unsigned char bat_get_status()

@@ -17,14 +17,149 @@
 #include "adc.h"
 #include "eps_bat.h"
 #include "arducam_user.h"
+//#include "imtq.h"
+#include "ants.h"
+#include "he100.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
 
 // Configuration for ground testing and flight configurations
 // Input/Output configuration: Define USB or HE100, but not both
-#define USB      // Enable USB I/O (ground testing only)
-//#define HE100    // Enable He-100 transceiver I/O (ground testing or flight)
+//#define USB      // Enable USB I/O (ground testing only)
+#define HE100    // Enable He-100 transceiver I/O (ground testing or flight)
+
+//#define TEST_ARDUCAM
+//#define TEST_IMTQ
+//#define TEST_ANTS
+//#define ANTS_DEPLOY  // just the arm/disarm steps
+//#define ANTS_DEPLOY2 // include the actual deployment steps
+//#define UART2_INTERRUPT  // test the use of interrupt handler for incoming UART data
+
+// global variables accessed by interrupt service routines
+// ISR variables for the He-100 interface on UART2
+volatile unsigned char u2rx_char;
+volatile int nhbytes = 0; // number of good header bytes already received
+volatile int ndbytes = 0; // number of data payload bytes expected
+volatile int data_byte;   // current data byte
+volatile int ishead_flag = 0;
+volatile int isdata_flag = 0;
+volatile int he100_acknack = 0;
+volatile int he100_receive = 0;
+volatile unsigned char he100_head[8]; // command code, payload length, and checksum bytes
+volatile unsigned char he100_data[256]; // data payload from He-100
+volatile int data_bytes;
+volatile unsigned char u2rx_flag;
+
+#ifdef UART2_INTERRUPT
+// test code for UART2 receive interrupt handler
+void _ISR _U2RXInterrupt (void)
+{
+    // read a single character from the UART2 receive buffer
+    u2rx_char = U2RXREG;
+    // if a header has not been found, keep checking
+    if (!ishead_flag)
+    {
+        // trap the start of an He-100 output on UART2
+        if (u2rx_char == 'H')
+        {
+            // force the start of a new header 
+            nhbytes = 0;
+            he100_head[nhbytes++] = u2rx_char;
+        }
+        // trap the second byte of He-100 output
+        else if (nhbytes == 1 && u2rx_char == 'e')
+        {
+            he100_head[nhbytes++] = u2rx_char;
+        }
+        // trap the third byte of He-100 output, and set flag to gather 
+        // remaining header data
+        else if (nhbytes == 2 && u2rx_char == 0x20)
+        {
+            he100_head[nhbytes++]=u2rx_char;
+            ishead_flag = 1;
+            isdata_flag = 0;
+        }
+        // any other condition means not a valid header, so reset
+        else
+        {
+            nhbytes = 0;
+            ndbytes = 0;
+            ishead_flag = 0;
+            isdata_flag = 0;
+            he100_acknack = 0;
+            he100_receive = 0;
+        }
+    }
+    else if (!isdata_flag)
+    {
+        // gather remaining header data
+        // trap the command code, payload size, and checksum bytes
+        if (nhbytes < 8)
+        {
+            he100_head[nhbytes++] = u2rx_char;
+        }
+        // reached the end of the header, so compute checksum for bytes 2 through 5
+        if (nhbytes == 8)
+        {
+            int i;
+            unsigned char ck_a, ck_b;
+            ck_a = 0;
+            ck_b = 0;
+            for (i=2 ; i<6 ; i++)
+            {
+                ck_a += he100_head[i];
+                ck_b += ck_a;
+            }
+            // check checksum against bytes 6 and 7
+            he100_head[6] = ck_a;
+            he100_head[7] = ck_b;
+            if (ck_a == he100_head[6] && ck_b == he100_head[7])
+            {
+                // checksum is good: if this is a packet receive, get length
+                // from header bytes 4 and 5, set flag to start retrieving payload
+                if (he100_head[3] == 0x04)
+                {
+                    ndbytes = (he100_head[4]<<8 | he100_head[5]);
+                    data_byte = 0;
+                    isdata_flag = 1;
+                }
+                // if not a receive packet, set flag that ack/nack is ready
+                else
+                {
+                    he100_acknack = 1;
+                }
+            }
+            // if checksum is bad, reject and reset traps
+            else
+            {
+                nhbytes = 0;
+                ndbytes = 0;
+                ishead_flag = 0;
+                isdata_flag = 0;
+                he100_acknack = 0;
+                he100_receive = 0;
+            }
+        }
+    }
+    // if ishead_flag and isdata_flag are both set, then fill the data array
+    else
+    {
+        if (data_byte < ndbytes)
+        {
+            he100_data[data_byte++] = u2rx_char;
+        }
+        // this is the last byte, so set flag that receive is complete
+        if (data_byte == ndbytes)
+        {
+            // set flag that data is ready
+            he100_receive = 1;
+        }
+    }
+    // reset the interrupt flag before exit
+    _U2RXIF = 0;
+}
+#endif // UART_INTERRUPT
 
 int main(void) {
     
@@ -34,11 +169,14 @@ int main(void) {
     T1CON = 0x8030;
     long wait;          // Timer trigger
     int ui;             // user input, for ground testing
-
+    int i;
+    
     // Set desired baud rates for UART2 (He-100 radio or USB interfaces)
 #ifdef HE100
     init_data.u2br_request = 9600;   // UART2 desired baud rate for radio
+    unsigned char he100_response[8];
 #endif
+    
 #ifdef USB    
     init_data.u2br_request = 115200; // UART2 desired baud rate for COM port
     char msg[128];      // character string for messages to user via COM port
@@ -62,15 +200,26 @@ int main(void) {
     // enable level translation for USB I/O through U1 and U16 chips
     _TRISC1 = 0;        // Set Port C, pin 1 as output (OE-USB)
     _RC1 = 0;           // set the OE-USB signal low, to allow level translation
+    // Common header for ground testing output
+    write_string2("---------------------------------------------");
+    write_string2("RamSat flight software: ground testing output");
+    write_string2("---------------------------------------------");
 #endif
 
     // give all devices an adequate time to reset after power-on
     wait = 1000 * DELAYMSEC;
     TMR1 = 0;
     while (TMR1 < wait);
-    
+
+#ifdef TEST_ARDUCAM
     // switch on power to the cameras
     unsigned char cameras_on_status = eps_cameras_on();
+#endif
+
+#ifdef TEST_ANTS
+    // switch on power to the antenna (deploy and I2C)
+    unsigned char antenna_on_status = eps_antenna_on();
+#endif
     
     // Tests of components that use PIC peripherals
     // These might later get packaged as a single test routine with telemetry
@@ -82,10 +231,9 @@ int main(void) {
     
     
 #ifdef USB
-    // Common header for ground testing output
-    write_string2("---------------------------------------------");
-    write_string2("RamSat flight software: ground testing output");
-    write_string2("---------------------------------------------");
+    write_string2("-----------------------------------");
+    write_string2("Test: PIC peripheral clock speeds and integrated devices");
+    write_string2("-----------------------------------");
     sprintf(msg,"UART2: Requested baud rate = %ld", init_data.u2br_request);
     write_string2(msg);
     sprintf(msg,"UART2: Actual baud rate    = %ld", init_data.u2br_actual);
@@ -156,7 +304,26 @@ int main(void) {
     float batv = eps_get_batv();
     sprintf(msg,"Battery voltage = %.2f",batv);
     write_string2(msg);
-    
+    float bcr1v = eps_get_bcr1v();
+    float bcr2v = eps_get_bcr2v();
+    float bcr3v = eps_get_bcr3v();
+    float bcroutv = eps_get_bcroutv();
+    sprintf(msg,"BCR Voltages: %.2f %.2f %.2f %.2f",bcr1v, bcr2v, bcr3v, bcroutv);
+    write_string2(msg);
+    float bcr1ia = eps_get_bcr1ia();
+    float bcr1ib = eps_get_bcr1ib();
+    float bcr2ia = eps_get_bcr2ia();
+    float bcr2ib = eps_get_bcr2ib();
+    float bcr3ia = eps_get_bcr3ia();
+    float bcr3ib = eps_get_bcr3ib();
+    sprintf(msg,"BCR Currents: %.2f %.2f %.2f %.2f %.2f %.2f",bcr1ia, bcr1ib, bcr2ia, bcr2ib, bcr3ia, bcr3ib);
+    write_string2(msg);
+    float bati = bat_get_bati();
+    int ischarging = bat_get_batischarging();
+    sprintf(msg,"Bat current (is_charge) = %.2f, %d", bati, ischarging);
+    write_string2(msg);
+
+#ifdef TEST_ARDUCAM
     // test camera interfaces
     write_string2("-----------------------------------");
     write_string2("Test: Arducam Interfaces and Operation");
@@ -172,11 +339,204 @@ int main(void) {
     sprintf(msg,"Arducam Init: Test is_error = %d", arducam_init_iserror);
     write_string2(msg);
     // start the image capture test loop
-    int arducam_capture_iserror = test_arducam_capture();
-    sprintf(msg,"Arducam Capture: Test is_error = %d", arducam_capture_iserror);
+    //int arducam_capture_iserror = test_arducam_capture();
+    //sprintf(msg,"Arducam Capture: Test is_error = %d", arducam_capture_iserror);
+    //write_string2(msg);
+#endif
+    
+#ifdef TEST_IMTQ
+    // Simple interface test for iMTQ (magnetorquer)
+    write_string2("-----------------------------------");
+    write_string2("Test: iMTQ interface (no-op command)");
+    write_string2("-----------------------------------");
+    imtq_resp_common imtq_common;       // iMTQ response from every command
+    imtq_no_op(&imtq_common);
+    sprintf(msg,"iMTQ response: command ID = 0x%02x", imtq_common.cc);
+    write_string2(msg);
+    sprintf(msg,"iMTQ response: status byte = 0x%02x", imtq_common.stat);
+    write_string2(msg);
+#endif
+
+#ifdef TEST_ANTS    
+    // Simple interface test for ANTs (dual dipole antenna module)
+    write_string2("-----------------------------------");
+    write_string2("Test: ANTs interface (deployment status command)");
+    write_string2("-----------------------------------");
+    sprintf(msg,"Antenna power on status = 0x%02x",antenna_on_status);
+    write_string2(msg);
+    unsigned char ants_response[2];      
+    
+#ifdef ANTS_DEPLOY
+    write_string2("-----------------------------------");
+    write_string2("ANTS Deployment: Arm");
+    write_string2("-----------------------------------");
+    ants_arm();
+    ants_deploy_status(ants_response);
+    sprintf(msg,"ANTs deploy status: byte 1 = 0x%02x", ants_response[0]);
+    write_string2(msg);
+    sprintf(msg,"ANTs deploy status: byte 2 = 0x%02x", ants_response[1]);
+    write_string2(msg);
+    
+#ifdef ANTS_DEPLOY2    
+    write_string2("-----------------------------------");
+    write_string2("ANTS Deployment: Deploy all");
+    write_string2("-----------------------------------");
+    ants_deploy_all();
+    ants_deploy_status(ants_response);
+    sprintf(msg,"ANTs deploy status: byte 1 = 0x%02x", ants_response[0]);
+    write_string2(msg);
+    sprintf(msg,"ANTs deploy status: byte 2 = 0x%02x", ants_response[1]);
+    write_string2(msg);
+    
+    wait = 1000 * DELAYMSEC;
+    while (ants_response[0] & 0x08)
+    {
+        TMR1 = 0;
+        while (TMR1 < wait);
+        ants_deploy_status(ants_response);
+        write_string2("---");
+        sprintf(msg,"ANTs deploy status: byte 1 = 0x%02x", ants_response[0]);
+        write_string2(msg);
+        sprintf(msg,"ANTs deploy status: byte 2 = 0x%02x", ants_response[1]);
+        write_string2(msg);
+    }
+    
+    write_string2("-----------------------------------");
+    write_string2("ANTS Deployment: Get deploy times");
+    write_string2("-----------------------------------");
+    ants_time_1(ants_response);
+    sprintf(msg,"ANTs time 1: byte 1 = 0x%02x", ants_response[0]);
+    write_string2(msg);
+    sprintf(msg,"ANTs time 1: byte 2 = 0x%02x", ants_response[1]);
+    write_string2(msg);
+    ants_time_2(ants_response);
+    sprintf(msg,"ANTs time 2: byte 1 = 0x%02x", ants_response[0]);
+    write_string2(msg);
+    sprintf(msg,"ANTs time 2: byte 2 = 0x%02x", ants_response[1]);
+    write_string2(msg);
+    ants_time_3(ants_response);
+    sprintf(msg,"ANTs time 3: byte 1 = 0x%02x", ants_response[0]);
+    write_string2(msg);
+    sprintf(msg,"ANTs time 3: byte 2 = 0x%02x", ants_response[1]);
+    write_string2(msg);
+    ants_time_4(ants_response);
+    sprintf(msg,"ANTs time 4: byte 1 = 0x%02x", ants_response[0]);
+    write_string2(msg);
+    sprintf(msg,"ANTs time 4: byte 2 = 0x%02x", ants_response[1]);
+    write_string2(msg);
+#endif // ANTS_DEPLOY2
+    
+    write_string2("-----------------------------------");
+    write_string2("ANTS Deployment: Disarm");
+    write_string2("-----------------------------------");
+    ants_disarm();
+    ants_deploy_status(ants_response);
+    sprintf(msg,"ANTs deploy status: byte 1 = 0x%02x", ants_response[0]);
+    write_string2(msg);
+    sprintf(msg,"ANTs deploy status: byte 2 = 0x%02x", ants_response[1]);
+    write_string2(msg);
+    
+    // look at the battery status after antenna deployment
+    // test EPS and battery telemetry
+    write_string2("-----------------------------------");
+    write_string2("Test: EPS / Battery Telemetry");
+    write_string2("-----------------------------------");
+    eps_status = eps_get_status();
+    sprintf(msg,"EPS status byte = 0x%02x", eps_status);
+    write_string2(msg);
+    bat_status = bat_get_status();
+    sprintf(msg,"Bat status byte = 0x%02x", bat_status);
+    write_string2(msg);
+    batv = eps_get_batv();
+    sprintf(msg,"Battery voltage = %.2f",batv);
+    write_string2(msg);
+    bcr1v = eps_get_bcr1v();
+    bcr2v = eps_get_bcr2v();
+    bcr3v = eps_get_bcr3v();
+    bcroutv = eps_get_bcroutv();
+    sprintf(msg,"BCR Voltages: %.2f %.2f %.2f %.2f",bcr1v, bcr2v, bcr3v, bcroutv);
+    write_string2(msg);
+    bcr1ia = eps_get_bcr1ia();
+    bcr1ib = eps_get_bcr1ib();
+    bcr2ia = eps_get_bcr2ia();
+    bcr2ib = eps_get_bcr2ib();
+    bcr3ia = eps_get_bcr3ia();
+    bcr3ib = eps_get_bcr3ib();
+    sprintf(msg,"BCR Currents: %.2f %.2f %.2f %.2f %.2f %.2f",bcr1ia, bcr1ib, bcr2ia, bcr2ib, bcr3ia, bcr3ib);
+    write_string2(msg);
+    bati = bat_get_bati();
+    ischarging = bat_get_batischarging();
+    sprintf(msg,"Bat current (is_charge) = %.2f, %d", bati, ischarging);
     write_string2(msg);
 
+#endif // ANTS_DEPLOY
+    
+#endif // TEST_ANTS
+
+#endif // USB
+
+#ifdef UART2_INTERRUPT
+    // Test the use of UART2 receive interrupt to handle incoming data.
+    // Eventually this will be used to handle packets received by the radio
+    // NB: This test block requires both WRITE_DIAG1 and USE_USB be defined.
+    
+    // clear the UART2 receive interrupt flag, and enable the interrupt source
+    _U2RXIF = 0;
+    _U2RXIE = 1;
+    
+    // enter the main loop, wait for interrupts
+    while (1)
+    {
+        // check for a valid ack/nack response on UART2
+        if (he100_acknack)
+        {
+            // disable the interrupt source
+            _U2RXIE = 0;
+            
+            // transmit a diagnostic message
+            he100_transmit_test_msg2(he100_response);
+            
+            // reset the UART2 traps
+            nhbytes = 0;
+            ndbytes = 0;
+            ishead_flag = 0;
+            isdata_flag = 0;
+            he100_acknack = 0;
+            he100_receive = 0;
+            // enable the interrupt source
+            _U2RXIE = 1;
+        }
+        // check for valid data receive on UART2
+        if (he100_receive)
+        {
+            // disable the interrupt source
+            _U2RXIE = 0;
+            
+            // transmit a diagnostic message
+            he100_transmit_test_msg3(he100_response);
+            
+            // reset the UART2 traps
+            nhbytes = 0;
+            ndbytes = 0;
+            ishead_flag = 0;
+            isdata_flag = 0;
+            he100_acknack = 0;
+            he100_receive = 0;
+            // enable the interrupt source
+            _U2RXIE = 1;
+        }
+    }
 #endif
+    
+    wait = 1000 * DELAYMSEC;
+    for (i=0 ; i<10 ; i++)
+    {
+        he100_transmit_test_msg1(he100_response);
+        TMR1=0;
+        while (TMR1 < wait);
+        TMR1=0;
+        while (TMR1 < wait);
+    }
 
     // hold here
     while (1);
