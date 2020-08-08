@@ -1,7 +1,7 @@
 /*
  * File:       rtc.c
  * Author:     Peter Thornton
- * Purpose:    Functions to interface with the off-chip Real TIme Clock
+ * Purpose:    Low-level functions to interface with the off-chip Real TIme Clock
  *             (Part number m41t81s, integrated on Pumpkin MBM)
  * Created on: 18 May 2020
 */
@@ -19,14 +19,21 @@
 static int rtc_add_w = RTC_ADDR << 1;          // RTC address with write flag set (0)
 static int rtc_add_r = (RTC_ADDR << 1) | 0b1;  // RTC address with read flag set (1)
 
-// data array used to both read from and write to RTC registers
-static unsigned char rtc_data[20];              // maximum size for any command
-
-// write the specified number of bytes of data from rtc_data array to RTC,
-// starting at the indicated byte
-void rtc_write_data(int nbytes, unsigned char start_reg)
+// Write the specified number of bytes of data from in array to RTC,
+// starting at start_reg register. The data to write are assumed to start 
+// at position 0 in input array.
+// Returns 1 for error, 0 for no error.
+int rtc_write_nbytes(int nbytes, unsigned char firstreg, unsigned char *in)
 {
+    int err = 0;
     int i;
+    
+    // make sure the input parameters are in valid range for RTC
+    if ((firstreg > 0x13) || (firstreg+nbytes > 0x14))
+    {
+        err = 1;
+        return err;
+    }
     
     // ensure i2c bus is in idle state
     idle_i2c1();
@@ -35,21 +42,23 @@ void rtc_write_data(int nbytes, unsigned char start_reg)
     // transmit device address byte with write flag
     transmit_i2c1(rtc_add_w);
     // transmit the address for first byte to write (0x00 - 0x13)
-    transmit_i2c1(start_reg);
+    transmit_i2c1(firstreg);
     // transmit the requested number of command bytes
     for (i=0 ; i<nbytes ; i++)
     {
-        transmit_i2c1(rtc_data[i]);
+        transmit_i2c1(*in++);
     }
     // Initiate a stop and wait the specified time (ms)
     // the wait gives device time to prepare response
     stop_i2c1(RTC_DELAY);
+    
+    return err;
 }
 
-// Read the specified number of bytes from the RTC device into out array.
+// Read the specified number of bytes from the RTC device into output array.
 // The device allows read to start from arbitrary position, given as firstreg.
 // Returns 1 for error, 0 for no error.
-int rtc_read_data(int firstreg, int nbytes, unsigned char *out)
+int rtc_read_nbytes(int nbytes, unsigned char firstreg, unsigned char *out)
 {
     int err = 0;
     int i;
@@ -91,68 +100,64 @@ int rtc_read_data(int firstreg, int nbytes, unsigned char *out)
     return err;
 }
 
-// a test function that returns the first nbytes of data from RTC registers
-void rtc_test_read(void)
+// Set a single bit by first reading the register, then, if necessary, changing the
+// specified bit and writing the register. bitn is the bit position (0-7). bitval is
+// the desired bit value.
+int rtc_write_bit(unsigned char reg, int bitn, int bitval)
 {
-    int i;
-    int nbytes=20;
-    unsigned char regvals[20];
-    char msg[128];      // character string for messages to user via COM port
+    int err = 0;
+    unsigned char regval;
     
-    // read the first nbytes from RTC registers
-    rtc_read_data(0x00, nbytes, regvals);
-    // write the register values to USB
-    for (i=0 ; i<20 ; i++)
+    // check that bit position and bit value are valid
+    if (bitn < 0 || bitn > 7 || bitval < 0 || bitval > 1)
     {
-        sprintf(msg,"RTC: reg %02d = 0x%02x",i, regvals[i]);
-        write_string2(msg);
+        err = 1;
+        return err;
     }
-}
-
-// a test function to write 00 to the first two bytes of RTC register
-// This should turn off the stop bit, allowing clock to run
-void rtc_test_set(void)
-{
-    int nbytes=8;
-    unsigned char start_reg;
     
-    // first, clear the stop bit (reg 01.7)
-    start_reg = 0x00;
-    rtc_data[0]=0x00;   // decimal seconds (00-99)
-    rtc_data[1]=0x00;   // seconds (0-59)  
-    rtc_data[2]=0x05;   // minutes (0-59)
-    rtc_data[3]=0x01;   // hour (00-23)
-    rtc_data[4]=0x03;   // day of week (1-7)
-    rtc_data[5]=0x19;   // day of month (1-31)
-    rtc_data[6]=0x05;   // month (1-12)
-    rtc_data[7]=0x20;   // year (00-99)
-    rtc_write_data(nbytes, start_reg);
+    // read the register and return if error
+    err = rtc_read_nbytes(1, reg, &regval);
+    if (err)
+    {
+        return err;
+    }
+    
+    // set or clear bit
+    if (bitval)  // set bit
+    {
+        regval |= (bitval << bitn);
+    }
+    else         // clear bit
+    {
+        regval &= ~(bitval << bitn);
+    }
+    
+    return err;
 }
 
-// clear the halt bit, which gets set if the RTC switches to battery power
-void rtc_clearhalt(void)
+// read a single bit from a specified register. bitn is the bit position (0-7).
+// bitval is the returned bit value.
+int rtc_read_bit(unsigned char reg, int bitn, int *bitval)
 {
-    int nbytes = 1;
-    unsigned char start_reg = 0x0c;
-    rtc_data[0] = 0x00;
-    rtc_write_data(nbytes, start_reg);
-}
-
-// clear the stop bit, which is set by default on first powerup
-void rtc_clearstop(void)
-{
-    int nbytes = 1;
-    unsigned char start_reg = 0x01;
-    rtc_data[0] = 0x00;
-    rtc_write_data(nbytes, start_reg);
-}
-
-
-// clear the oscillator fail bit, which is set by default on first powerup
-void rtc_clearof(void)
-{
-    int nbytes = 1;
-    unsigned char start_reg = 0x0f;
-    rtc_data[0] = 0x00;
-    rtc_write_data(nbytes, start_reg);
+    int err = 0;
+    unsigned char regval;
+    
+    // check that bit position and bit value is valid
+    if (bitn < 0 || bitn > 7)
+    {
+        err = 1;
+        return err;
+    }
+    
+    // read the register and return if error
+    err = rtc_read_nbytes(1, reg, &regval);
+    if (err)
+    {
+        return err;
+    }
+    
+    // set the return bit value
+    *bitval = (regval >> bitn) & 0x01;
+    
+    return err;
 }

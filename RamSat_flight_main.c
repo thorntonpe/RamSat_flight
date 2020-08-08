@@ -10,9 +10,10 @@
 #include "PIC_config.h"
 #include "init.h"
 #include "uart.h"
+#include "preflight.h"
 #include "sfm.h"
 #include "sd_test.h"
-#include "rtc.h"
+#include "rtc_user.h"
 #include "datetime.h"
 #include "adc.h"
 #include "eps_bat.h"
@@ -26,9 +27,10 @@
 
 // Configuration for ground testing and flight configurations
 // Input/Output configuration: Define USB or HE100, but not both
-//#define USB      // Enable USB I/O (ground testing only)
-#define HE100    // Enable He-100 transceiver I/O (ground testing or flight)
+#define USB      // Enable USB I/O (ground testing only)
+//#define HE100    // Enable He-100 transceiver I/O (ground testing or flight)
 
+#define INIT_RTC   // Pre-flight code to initialize RTC
 //#define TEST_ARDUCAM
 //#define TEST_IMTQ
 //#define TEST_ANTS
@@ -175,6 +177,7 @@ int main(void) {
 #ifdef HE100
     init_data.u2br_request = 9600;   // UART2 desired baud rate for radio
     unsigned char he100_response[8];
+    unsigned char he100_telem[26];
 #endif
     
 #ifdef USB    
@@ -204,6 +207,7 @@ int main(void) {
     write_string2("---------------------------------------------");
     write_string2("RamSat flight software: ground testing output");
     write_string2("---------------------------------------------");
+    
 #endif
 
     // give all devices an adequate time to reset after power-on
@@ -211,6 +215,26 @@ int main(void) {
     TMR1 = 0;
     while (TMR1 < wait);
 
+#ifdef INIT_RTC
+    // This code is to be used pre-flight to clear the initial power-up
+    // flags for the RTC (from factory), and set the date and time.
+    // Should only be used with USB, not HE100.
+    // 1. read the control flags and write as a bit-field (HALT, STOP, OF)
+    int rtc_iserror, rtc_flags;
+    rtc_iserror = rtc_read_flags(&rtc_flags);
+    sprintf(msg,"Init RTC: is_error = %d", rtc_iserror);
+    write_string2(msg);
+    sprintf(msg,"RTC flags = 0x%02x", rtc_flags);
+    write_string2(msg);
+    // 2. enter a user-interface loop with options to display (d) and set (s)
+    // clock, and other options to clear the HALT (c), STOP (t), and OF (f) flags
+    preflight_init_rtc();
+
+    // hold here
+    while (1);
+    
+#endif
+    
 #ifdef TEST_ARDUCAM
     // switch on power to the cameras
     unsigned char cameras_on_status = eps_cameras_on();
@@ -228,8 +252,7 @@ int main(void) {
     int sfm_iserror = test_sfm();
     //     SD card: write-read-delete
     int sd_iserror = test_sd_write_read_delete();
-    
-    
+
 #ifdef USB
     write_string2("-----------------------------------");
     write_string2("Test: PIC peripheral clock speeds and integrated devices");
@@ -250,6 +273,8 @@ int main(void) {
     write_string2(msg);
     sprintf(msg,"SPI3: clock prescalar = %ld", init_data.spi3_prescalar);
     write_string2(msg);
+    sprintf(msg,"ADC: Initialize is_error = %d", init_data.adc_iserror);
+    write_string2(msg);
     sprintf(msg,"SFM: Test is_error = %d", sfm_iserror);
     write_string2(msg);
     sprintf(msg,"SD: Test is_error = %d", sd_iserror);
@@ -259,38 +284,38 @@ int main(void) {
     write_string2("-----------------------------------");
     write_string2("Test: Real Time Clock and Julian Date");
     write_string2("-----------------------------------");
-    rtc_clearhalt();
+    //rtc_clearhalt();
     char isodatetime[25];
-    get_isodatetime(isodatetime);
+    //get_isodatetime(isodatetime);
     write_string2(isodatetime);
     // test the julian date function
     double jdate;
-    get_juliandate(&jdate);
+    //get_juliandate(&jdate);
     sprintf(msg,"Jdate = %.5lf",jdate);
     write_string2(msg);
     
-    // test ADC read from channels AN8-AN15
+    // test ADC read from 8 channels: AN9-AN15, AN17
     write_string2("-----------------------------------");
     write_string2("Test: Sun Sensor Analog to Digital Conversion");
     write_string2("-----------------------------------");
-    int ad_result = adc_test_ssac();
-    sprintf(msg,"ADC: AN8  = %d",ad_result);
+    adc_test_ssac();
+    sprintf(msg,"ADC: AN17 = %d",ADC1BUF7);
     write_string2(msg);
-    sprintf(msg,"ADC: AN9  = %d",ADC1BUF1);
+    sprintf(msg,"ADC: AN9  = %d",ADC1BUF0);
     write_string2(msg);
-    sprintf(msg,"ADC: AN10 = %d",ADC1BUF2);
+    sprintf(msg,"ADC: AN10 = %d",ADC1BUF1);
     write_string2(msg);
-    sprintf(msg,"ADC: AN11 = %d",ADC1BUF3);
+    sprintf(msg,"ADC: AN11 = %d",ADC1BUF2);
     write_string2(msg);
-    sprintf(msg,"ADC: AN12 = %d",ADC1BUF4);
+    sprintf(msg,"ADC: AN12 = %d",ADC1BUF3);
     write_string2(msg);
-    sprintf(msg,"ADC: AN13 = %d",ADC1BUF5);
+    sprintf(msg,"ADC: AN13 = %d",ADC1BUF4);
     write_string2(msg);
-    sprintf(msg,"ADC: AN14 = %d",ADC1BUF6);
+    sprintf(msg,"ADC: AN14 = %d",ADC1BUF5);
     write_string2(msg);
-    sprintf(msg,"ADC: AN15 = %d",ADC1BUF7);
+    sprintf(msg,"ADC: AN15 = %d",ADC1BUF6);
     write_string2(msg);
-    
+
     // test EPS and battery telemetry
     write_string2("-----------------------------------");
     write_string2("Test: EPS / Battery Telemetry");
@@ -322,6 +347,10 @@ int main(void) {
     int ischarging = bat_get_batischarging();
     sprintf(msg,"Bat current (is_charge) = %.2f, %d", bati, ischarging);
     write_string2(msg);
+
+    // hold here
+    while (1);
+    
 
 #ifdef TEST_ARDUCAM
     // test camera interfaces
@@ -480,11 +509,20 @@ int main(void) {
     // Eventually this will be used to handle packets received by the radio
     // NB: This test block requires both WRITE_DIAG1 and USE_USB be defined.
     
+    // enter the main loop, wait for interrupts
+    char acknack_msg[255];
+    char goodpacket_msg[255];
+    float batv = eps_get_batv();
+    // try to get telemetry
+    //he100_telemetry(he100_telem);
+    sprintf(acknack_msg,"Startup: BatV = %.2f, RSSI = %d",batv,he100_telem[15]);
+    //he100_transmit_test_msg2(he100_response, acknack_msg);
+
     // clear the UART2 receive interrupt flag, and enable the interrupt source
     _U2RXIF = 0;
     _U2RXIE = 1;
     
-    // enter the main loop, wait for interrupts
+    
     while (1)
     {
         // check for a valid ack/nack response on UART2
@@ -493,8 +531,10 @@ int main(void) {
             // disable the interrupt source
             _U2RXIE = 0;
             
+            sprintf(acknack_msg,"%02x %02x %02x %02x %02x %02x %02x %02x",he100_head[0],he100_head[1],he100_head[2],he100_head[3],he100_head[4],he100_head[5],he100_head[6],he100_head[7]);
+            
             // transmit a diagnostic message
-            he100_transmit_test_msg2(he100_response);
+            he100_transmit_test_msg2(he100_response, acknack_msg);
             
             // reset the UART2 traps
             nhbytes = 0;
@@ -513,7 +553,10 @@ int main(void) {
             _U2RXIE = 0;
             
             // transmit a diagnostic message
-            he100_transmit_test_msg3(he100_response);
+            batv = eps_get_batv();
+            he100_telemetry(he100_telem);
+            sprintf(goodpacket_msg,"Valid packet: BatV = %.2f, RSSI = %d",batv,he100_telem[15]);
+            he100_transmit_test_msg2(he100_response, goodpacket_msg);
             
             // reset the UART2 traps
             nhbytes = 0;
@@ -528,16 +571,6 @@ int main(void) {
     }
 #endif
     
-    wait = 1000 * DELAYMSEC;
-    for (i=0 ; i<10 ; i++)
-    {
-        he100_transmit_test_msg1(he100_response);
-        TMR1=0;
-        while (TMR1 < wait);
-        TMR1=0;
-        while (TMR1 < wait);
-    }
-
     // hold here
     while (1);
 

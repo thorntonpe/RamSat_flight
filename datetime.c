@@ -18,13 +18,13 @@
 int get_isodate(char *isodate)
 {
     int err = 0;
-    int firstreg = 0x05;
     int nregs = 3;
+    unsigned char firstreg = 0x05;
     unsigned char rtc_data[3];
     int year, mon, day;
     
     // read the day, month, and year from RTC //
-    err = rtc_read_data(firstreg, nregs, rtc_data);
+    err = rtc_read_nbytes(nregs, firstreg, rtc_data);
     if (!err)
     {
         // format the ISO 8601 date
@@ -45,13 +45,13 @@ int get_isodate(char *isodate)
 int get_isotime(char *isotime)
 {
     int err = 0;
-    int firstreg = 0x00;
     int nregs = 4;
+    unsigned char firstreg = 0x00;
     unsigned char rtc_data[4];
     int hour, min, sec, hsec;
     
     // read the hour, minutes, seconds, and fractional seconds from RTC //
-    err = rtc_read_data(firstreg, nregs, rtc_data);
+    err = rtc_read_nbytes(nregs, firstreg, rtc_data);
     if (!err)
     {
         // format the ISO 8601 time
@@ -73,13 +73,13 @@ int get_isotime(char *isotime)
 int get_isodatetime(char *isodatetime)
 {
     int err = 0;
-    int firstreg = 0x00;
     int nregs = 8;
+    unsigned char firstreg = 0x00;
     unsigned char rtc_data[8];
     int year, mon, day, hour, min, sec, hsec;
     
     // read the time and date registers from RTC //
-    err = rtc_read_data(firstreg, nregs, rtc_data);
+    err = rtc_read_nbytes(nregs, firstreg, rtc_data);
     if (!err)
     {
         // format the ISO 8601 date
@@ -105,13 +105,13 @@ int get_isodatetime(char *isodatetime)
 int get_fatdatetime(unsigned short *date, unsigned short *time)
 {
     int err = 0;
-    int firstreg = 0x00;
     int nregs = 8;
+    unsigned char firstreg = 0x00;
     unsigned char rtc_data[8];
     int year, mon, day, hour, min, sec, sec2;
     
     // read the day, month, and year from RTC //
-    err = rtc_read_data(firstreg, nregs, rtc_data);
+    err = rtc_read_nbytes(nregs, firstreg, rtc_data);
     if (!err)
     {
         // format the ISO 8601 date
@@ -138,8 +138,8 @@ int get_fatdatetime(unsigned short *date, unsigned short *time)
 int get_juliandate(double *jdate)
 {
     int err = 0;
-    int firstreg = 0x00;
     int nregs = 8;
+    unsigned char firstreg = 0x00;
     unsigned char rtc_data[8];
     int year, mon, day, hour, min, sec;
     long int y, m, d;
@@ -148,7 +148,7 @@ int get_juliandate(double *jdate)
     double frac = 0.0;
     
     // read the day, month, and year from RTC //
-    err = rtc_read_data(firstreg, nregs, rtc_data);
+    err = rtc_read_nbytes(nregs, firstreg, rtc_data);
     if (!err)
     {
         // format the ISO 8601 date

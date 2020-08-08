@@ -7,6 +7,7 @@
 
 void he100_checksum(unsigned char *buf, int nbytes);
 void he100_noop(unsigned char* response);
-void he100_transmit_test_msg1(unsigned char* response);
-void he100_transmit_test_msg2(unsigned char* response);
+void he100_telemetry(unsigned char* response);
+void he100_transmit_test_msg1(unsigned char* response, float batv);
+void he100_transmit_test_msg2(unsigned char* response, char* msg);
 void he100_transmit_test_msg3(unsigned char* response);

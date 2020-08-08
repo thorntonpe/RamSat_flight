@@ -22,6 +22,7 @@ typedef struct
     long brg1_reload;    // reload value for I2C_1 BRG
     long i2c2br;         // desired I2C_2 baud rate = 100 kHz
     long brg2_reload;    // reload value for I2C_2 BRG
+    int  adc_iserror;    // error condition for initialization of ADC
 } init_data_type;
 
 // function prototypes

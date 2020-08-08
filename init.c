@@ -33,5 +33,5 @@ void init_peripherals(init_data_type *init_data_p)
     init_data_p->brg2_reload = init_i2c2(FOSC, init_data_p->i2c2br);
     
     // initialize the 10-bit ADC peripheral, for sun sensor data
-    int err = init_adc();
+    init_data_p->adc_iserror = init_adc();
 }
