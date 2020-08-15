@@ -122,16 +122,18 @@ int rtc_write_bit(unsigned char reg, int bitn, int bitval)
         return err;
     }
     
+    
     // set or clear bit
     if (bitval)  // set bit
     {
-        regval |= (bitval << bitn);
+        regval |= (1 << bitn);
     }
     else         // clear bit
     {
-        regval &= ~(bitval << bitn);
+        regval &= ~(1 << bitn);
     }
-    
+    err = rtc_write_nbytes(1, reg, &regval);
+
     return err;
 }
 

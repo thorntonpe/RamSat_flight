@@ -226,12 +226,9 @@ int main(void) {
     write_string2(msg);
     sprintf(msg,"RTC flags = 0x%02x", rtc_flags);
     write_string2(msg);
-    // 2. enter a user-interface loop with options to display (d) and set (s)
-    // clock, and other options to clear the HALT (c), STOP (t), and OF (f) flags
+    // 2. enter an infinite user-interface loop with options to display (d) and set (s)
+    // clock, and other options to clear the HALT (c), STOP (t), and OF (f) flags.
     preflight_init_rtc();
-
-    // hold here
-    while (1);
     
 #endif
     
@@ -284,7 +281,9 @@ int main(void) {
     write_string2("-----------------------------------");
     write_string2("Test: Real Time Clock and Julian Date");
     write_string2("-----------------------------------");
-    //rtc_clearhalt();
+    int rtc_err;
+    rtc_err = rtc_clearhalt();
+    /*
     char isodatetime[25];
     //get_isodatetime(isodatetime);
     write_string2(isodatetime);
@@ -293,6 +292,7 @@ int main(void) {
     //get_juliandate(&jdate);
     sprintf(msg,"Jdate = %.5lf",jdate);
     write_string2(msg);
+    */
     
     // test ADC read from 8 channels: AN9-AN15, AN17
     write_string2("-----------------------------------");
@@ -316,6 +316,9 @@ int main(void) {
     sprintf(msg,"ADC: AN15 = %d",ADC1BUF6);
     write_string2(msg);
 
+    // hold here
+    while (1);
+    
     // test EPS and battery telemetry
     write_string2("-----------------------------------");
     write_string2("Test: EPS / Battery Telemetry");

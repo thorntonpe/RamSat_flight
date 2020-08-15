@@ -72,3 +72,10 @@ int rtc_read_flags(int *flags)
     
     return err;
 }
+
+int rtc_clearhalt()
+{
+    int err = 0;
+    err = rtc_write_bit(HALT_REG, HALT_BIT, 0);
+    return err;
+}

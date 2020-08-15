@@ -7,6 +7,9 @@
 
 // function prototypes 
 int rtc_read_flags(int *flags);
+int rtc_clearhalt();
+int rtc_clearstop();
+int rtc_clearof();
 
 
 
