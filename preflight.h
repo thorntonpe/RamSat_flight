@@ -7,6 +7,7 @@
 
 // function prototypes 
 void preflight_init_rtc();
+void preflight_init_predeploy();
 
 
 

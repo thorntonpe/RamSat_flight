@@ -7,12 +7,11 @@
 
 
 #include "xc.h"
+#include "clock.h"
 #include "PIC_config.h"
 #include "init.h"
 #include "uart.h"
 #include "preflight.h"
-#include "sfm.h"
-#include "sd_test.h"
 #include "rtc_user.h"
 #include "datetime.h"
 #include "adc.h"
@@ -30,7 +29,8 @@
 #define USB      // Enable USB I/O (ground testing only)
 //#define HE100    // Enable He-100 transceiver I/O (ground testing or flight)
 
-#define INIT_RTC   // Pre-flight code to initialize RTC
+//#define INIT_RTC   // Pre-flight code to initialize RTC
+//#define INIT_PREDEPLOY // Pre-flight code to set MUST_WAIT flag
 //#define TEST_ARDUCAM
 //#define TEST_IMTQ
 //#define TEST_ANTS
@@ -199,6 +199,7 @@ int main(void) {
     // Initialize the PIC24F peripherals
     init_peripherals(&init_data);
 
+
 #ifdef USB
     // enable level translation for USB I/O through U1 and U16 chips
     _TRISC1 = 0;        // Set Port C, pin 1 as output (OE-USB)
@@ -206,31 +207,33 @@ int main(void) {
     // Common header for ground testing output
     write_string2("---------------------------------------------");
     write_string2("RamSat flight software: ground testing output");
+    write_string2("Press any key to continue...");
+    ui = read_char2();
     write_string2("---------------------------------------------");
-    
 #endif
+    
+    // Initialize the hardware components that are integrated on Pumpkin MBM
+    // (serial flash memory, SD card, and real-time clock)
+    init_motherboard_components(&init_data);    
 
-    // give all devices an adequate time to reset after power-on
-    wait = 1000 * DELAYMSEC;
-    TMR1 = 0;
-    while (TMR1 < wait);
+    // perform the initial deployment test, and wait if the MUST_WAIT flag is set
+    init_wait(&init_data);
 
 #ifdef INIT_RTC
-    // This code is to be used pre-flight to clear the initial power-up
-    // flags for the RTC (from factory), and set the date and time.
+    // This code is to be used pre-flight to set the date and time.
     // Should only be used with USB, not HE100.
-    // 1. read the control flags and write as a bit-field (HALT, STOP, OF)
-    int rtc_iserror, rtc_flags;
-    rtc_iserror = rtc_read_flags(&rtc_flags);
-    sprintf(msg,"Init RTC: is_error = %d", rtc_iserror);
-    write_string2(msg);
-    sprintf(msg,"RTC flags = 0x%02x", rtc_flags);
-    write_string2(msg);
-    // 2. enter an infinite user-interface loop with options to display (d) and set (s)
+    // Enter an infinite user-interface loop with options to display (d) and set (s)
     // clock, and other options to clear the HALT (c), STOP (t), and OF (f) flags.
     preflight_init_rtc();
-    
 #endif
+
+#ifdef INIT_PREDEPLOY
+    // THis code is to be used pre-flight to set the predeployment flag
+    // on the serial flash memory. That flag is examined on powerup, and
+    // if set to MUST_WAIT the code forces a 30-minute wait, as required by 
+    // Nanoracks for deployment from the ISS.
+    preflight_init_predeploy();
+#endif    
     
 #ifdef TEST_ARDUCAM
     // switch on power to the cameras
@@ -242,14 +245,6 @@ int main(void) {
     unsigned char antenna_on_status = eps_antenna_on();
 #endif
     
-    // Tests of components that use PIC peripherals
-    // These might later get packaged as a single test routine with telemetry
-    // SPI components:
-    //     Serial flash memory: write-read
-    int sfm_iserror = test_sfm();
-    //     SD card: write-read-delete
-    int sd_iserror = test_sd_write_read_delete();
-
 #ifdef USB
     write_string2("-----------------------------------");
     write_string2("Test: PIC peripheral clock speeds and integrated devices");
@@ -272,27 +267,44 @@ int main(void) {
     write_string2(msg);
     sprintf(msg,"ADC: Initialize is_error = %d", init_data.adc_iserror);
     write_string2(msg);
-    sprintf(msg,"SFM: Test is_error = %d", sfm_iserror);
+    sprintf(msg,"SFM: Test is_error = %d", init_data.sfm_iserror);
     write_string2(msg);
-    sprintf(msg,"SD: Test is_error = %d", sd_iserror);
+    sprintf(msg,"SD: Test is_error = %d", init_data.sd_iserror);
+    write_string2(msg);
+    sprintf(msg,"RTC: Test flags is_error = %d", init_data.rtc_flags_iserror);
+    write_string2(msg);
+    sprintf(msg,"RTC: Flags = 0x%02x", init_data.rtc_flags);
+    write_string2(msg);
+    if (init_data.rtc_flags)
+    {
+        sprintf(msg,"RTC: Test clear flags is_error = %d", init_data.rtc_clear_iserror);
+        write_string2(msg);
+        sprintf(msg,"RTC: Test flags2 is_error = %d", init_data.rtc_flags2_iserror);
+        write_string2(msg);
+        sprintf(msg,"RTC: Flags2 = 0x%02x", init_data.rtc_flags2);
+        write_string2(msg);
+        sprintf(msg,"RTC: Last halt ISO8601 datetime = ");
+        strcat(msg,init_data.rtc_halt_time);
+        write_string2(msg);
+    }
+    sprintf(msg,"PDT: Wait status = %d", init_data.pdt_status);
+    write_string2(msg);
+    sprintf(msg,"PDT: Wait flag = 0x%02x", init_data.pdt_flag);
     write_string2(msg);
     
     // test the RTC and ISO8601 formatted datetime string function
     write_string2("-----------------------------------");
     write_string2("Test: Real Time Clock and Julian Date");
     write_string2("-----------------------------------");
-    int rtc_err;
-    rtc_err = rtc_clearhalt();
-    /*
     char isodatetime[25];
-    //get_isodatetime(isodatetime);
-    write_string2(isodatetime);
-    // test the julian date function
     double jdate;
-    //get_juliandate(&jdate);
-    sprintf(msg,"Jdate = %.5lf",jdate);
+    get_isodatetime(isodatetime);
+    sprintf(msg,"RTC: ISO8601 datetime = ");
+    strcat(msg,isodatetime);
     write_string2(msg);
-    */
+    get_juliandate(&jdate);
+    sprintf(msg,"RTC: Julian date = %.5lf",jdate);
+    write_string2(msg);
     
     // test ADC read from 8 channels: AN9-AN15, AN17
     write_string2("-----------------------------------");
@@ -318,7 +330,7 @@ int main(void) {
 
     // hold here
     while (1);
-    
+
     // test EPS and battery telemetry
     write_string2("-----------------------------------");
     write_string2("Test: EPS / Battery Telemetry");
@@ -326,6 +338,7 @@ int main(void) {
     unsigned char eps_status = eps_get_status();
     sprintf(msg,"EPS status byte = 0x%02x", eps_status);
     write_string2(msg);
+    
     unsigned char bat_status = bat_get_status();
     sprintf(msg,"Bat status byte = 0x%02x", bat_status);
     write_string2(msg);
@@ -346,14 +359,12 @@ int main(void) {
     float bcr3ib = eps_get_bcr3ib();
     sprintf(msg,"BCR Currents: %.2f %.2f %.2f %.2f %.2f %.2f",bcr1ia, bcr1ib, bcr2ia, bcr2ib, bcr3ia, bcr3ib);
     write_string2(msg);
+
     float bati = bat_get_bati();
     int ischarging = bat_get_batischarging();
     sprintf(msg,"Bat current (is_charge) = %.2f, %d", bati, ischarging);
     write_string2(msg);
 
-    // hold here
-    while (1);
-    
 
 #ifdef TEST_ARDUCAM
     // test camera interfaces

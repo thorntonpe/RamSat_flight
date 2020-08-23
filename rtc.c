@@ -8,9 +8,7 @@
 
 #include "xc.h"
 #include "i2c.h"
-#include "uart.h"  // temporary for test output to USB
 #include "rtc.h"
-#include <stdio.h> // temporary for output to USB
 
 #define RTC_ADDR 0x68               // 7-bit address for RTC on I2C bus
 #define RTC_DELAY 0                 // ms delay after RTC read or write command 

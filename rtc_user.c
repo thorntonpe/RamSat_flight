@@ -9,6 +9,7 @@
 
 #include "xc.h"
 #include "rtc.h"
+#include "clock.h"
 #include "rtc_user.h"
 
 #define HALT_REG 0x0c
@@ -73,9 +74,96 @@ int rtc_read_flags(int *flags)
     return err;
 }
 
+// clear the HALT flag
 int rtc_clearhalt()
 {
     int err = 0;
     err = rtc_write_bit(HALT_REG, HALT_BIT, 0);
+    return err;
+}
+
+// clear the STOP flag
+int rtc_clearstop()
+{
+    int err = 0;
+    err = rtc_write_bit(STOP_REG, STOP_BIT, 0);
+    return err;
+}
+
+// clear the Oscillator Fail flag
+int rtc_clearof()
+{
+    int err = 0;
+    err = rtc_write_bit(OF_REG, OF_BIT, 0);
+    return err;
+}
+
+// restart the oscillator (if OF flag is set any time other than first power up)
+// first set and then immediately clear the STOP bit to restart oscillator
+int rtc_restartosc()
+{
+    int err = 0;
+    if ((err = rtc_write_bit(STOP_REG, STOP_BIT, 1)))
+    {
+        return err;
+    }
+    if ((err = rtc_write_bit(STOP_REG, STOP_BIT, 0)))
+    {
+        return err;
+    }
+    return err;    
+}
+
+// clear flags, based on current flag settings
+int rtc_clear_flags(int flags)
+{
+    int err = 0;
+    int halt_flag, stop_flag, of_flag;
+    int i;
+    long wait;          // Timer trigger
+
+    
+    halt_flag = ((flags >> 2) & 0x01);
+    stop_flag = ((flags >> 1) & 0x01);
+    of_flag   = (flags & 0x01);
+    
+    if (halt_flag)
+    {
+        // clear the halt flag to restart clock, return if err
+        if ((err = rtc_clearhalt()))
+        {
+            return err;
+        }
+    }
+    
+    if (stop_flag)
+    {
+        // clear the stop flag, return if err
+        if ((err = rtc_clearstop()))
+        {
+            return err;
+        }
+    }
+    
+    if (of_flag)
+    {
+        // restart the oscillator (toggles the STOP bit), return if err
+        if ((err = rtc_restartosc()))
+        {
+            return err;
+        }
+        // wait 4 seconds, then clear the OF flag (per RTC datasheet)
+        wait = 1000 * TMR1MSEC;
+        for (i=0 ; i<4 ; i++)
+        {
+            TMR1 = 0;
+            while (TMR1 < wait);
+        }
+        if ((err = rtc_clearof()))
+        {
+            return err;
+        }
+    }
+    
     return err;
 }

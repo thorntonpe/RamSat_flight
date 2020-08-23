@@ -199,8 +199,9 @@ int wait_pdt(unsigned int n_secs, int *out_flag)
     
     switch(pdt_flag)
     {
-        case MUST_WAIT:  // pft wait period has not been satisfied, so wait
-            // wait the requred number of seconds
+        case MUST_WAIT:  
+            // pft wait period has not been satisfied, 
+            // so wait the requred number of seconds
             while (seconds_waited < n_secs)
             {
                 TMR1 = 0;
@@ -253,11 +254,11 @@ int wait_pdt(unsigned int n_secs, int *out_flag)
             break;
             
         case DONT_WAIT:
-            status = 2;  // return status: didn't wait
+            status = 0;  // return status: didn't wait
             break;
             
         default:
-            status = 0;  // return status: unrecognized pdt_flag value
+            status = 2;  // return status: unrecognized pdt_flag value
     } // end switch on pdt_flag
     
     *out_flag = pdt_flag;

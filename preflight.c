@@ -10,6 +10,7 @@
 #include "uart.h"
 #include "rtc.h"
 #include "rtc_user.h"
+#include "sfm.h"
 #include "preflight.h"
 #include <stdio.h>
 
@@ -20,9 +21,10 @@
 #define OF_REG 0x0f
 #define OF_BIT 2
 
+char msg[128];  // output message string
+
 void preflight_init_rtc()
 {
-    char msg[128];  // output message string
     int ui;         // user input at USB
     int i;          // loop control
     int nbytes;     // number of bytes to read from device
@@ -82,10 +84,10 @@ void preflight_init_rtc()
             nbytes = 8;
             rtc_data[0]=0x00;   // decimal seconds (00-99)
             rtc_data[1]=0x00;   // seconds (0-59)  
-            rtc_data[2]=0x05;   // minutes (0-59)
-            rtc_data[3]=0x03;   // hour (00-23)
+            rtc_data[2]=0x10;   // minutes (0-59)
+            rtc_data[3]=0x20;   // hour (00-23)
             rtc_data[4]=0x07;   // day of week (1-7)
-            rtc_data[5]=0x15;   // day of month (1-31)
+            rtc_data[5]=0x22;   // day of month (1-31)
             rtc_data[6]=0x08;   // month (1-12)
             rtc_data[7]=0x20;   // year (00-99)
             rtc_write_nbytes(nbytes, firstbyte, rtc_data);
@@ -122,4 +124,13 @@ void preflight_init_rtc()
     }
 }
 
+void preflight_init_predeploy()
+{
+    write_string2("-----------------------------------");
+    write_string2("Pre-flight: Initialize predeployment flag on SFM");
+    write_string2("-----------------------------------");
+    clear_pdt_flag();
+    write_string2("Predeployment flag set to MUST_WAIT");
+    while(1);
+}
 
