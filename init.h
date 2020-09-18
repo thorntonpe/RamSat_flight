@@ -10,6 +10,8 @@
 // data types
 typedef struct
 {
+    long u1br_request;   // UART1 requested baud rate
+    long u1br_actual;    // UART1 actual baud rate
     long u2br_request;   // UART2 requested baud rate
     long u2br_actual;    // UART2 actual baud rate
     long spi1_prescalar; // SPI1 clock prescalar

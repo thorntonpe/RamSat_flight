@@ -28,10 +28,12 @@ void he100_checksum(unsigned char *buf, int nbytes)
     *buf   = ck_b;
 }
 
-void he100_noop(unsigned char* response)
+int he100_noop(unsigned char* response)
 {
     int i;
     unsigned char buf[8];
+    unsigned char ck_a, ck_b;
+    
     // fill the header
     buf[0]=0x48; // 'H'
     buf[1]=0x65; // 'e'
@@ -51,12 +53,30 @@ void he100_noop(unsigned char* response)
     // read 8-byte response from radio board on UART2
     for (i=0 ; i<8 ; i++)
     {
-        *response++ = read_char2();
+        buf[i] = read_char2();
     }
-    *response = read_char2();
+    
+    // copy from buf to response output array
+    for (i=0 ; i<8 ; i++)
+    {
+        *response++ = buf[i];
+    }
+    
+    // test the response checksum
+    ck_a = buf[6];
+    ck_b = buf[7];
+    
+    // calculate the response checksum
+    he100_checksum(&buf[2],4);
+    // temp put the calc checksum in slots 4 and 5
+    buf[4] = ck_a;
+    buf[5] = ck_b;
+    
+    // return 1 if the checksum test fails, 0 otherwise
+    return ((ck_a != buf[6]) || (ck_b != buf[7]));
 }
 
-void he100_telemetry(unsigned char* response)
+void he100_telemetry(unsigned char* response, unsigned char* telem_raw)
 {
     int i;
     unsigned char buf[8];
@@ -81,7 +101,12 @@ void he100_telemetry(unsigned char* response)
     {
         *response++ = read_char2();
     }
-    *response = read_char2();
+    
+    // read 16-byte telemetry data +2 checksum bytes into raw array
+    for (i=0 ; i<18 ; i++)
+    {
+        *telem_raw++ = read_char2();
+    }
 }
 
 void he100_transmit_test_msg1(unsigned char* response, float batv)
