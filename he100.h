@@ -7,7 +7,7 @@
 
 void he100_checksum(unsigned char *buf, int nbytes);
 int he100_noop(unsigned char* response);
-void he100_telemetry(unsigned char* response, unsigned char* telem_raw);
+int he100_telemetry(unsigned char* telem_raw);
 void he100_transmit_test_msg1(unsigned char* response, float batv);
 void he100_transmit_test_msg2(unsigned char* response, char* msg);
 void he100_transmit_test_msg3(unsigned char* response);
@@ -20,11 +20,9 @@ struct he100_telem_struct {
     unsigned char rssi;
     unsigned long int bytes_received;
     unsigned long int bytes_transmitted;
-    unsigned char ck_a;
-    unsigned char ck_b;
 };
 
 union he100_telem_union {
-    unsigned char raw[18];
+    unsigned char raw[16];
     struct he100_telem_struct telem;
 };

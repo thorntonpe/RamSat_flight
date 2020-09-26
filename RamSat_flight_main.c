@@ -20,6 +20,7 @@
 //#include "imtq.h"
 #include "ants.h"
 #include "he100.h"
+#include "security.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -38,7 +39,7 @@
 //#define ANTS_DEPLOY  // just the arm/disarm steps
 //#define ANTS_DEPLOY2 // include the actual deployment steps
 #define BAT_TELEM  // include outputs for battery telemetry on RS232
-//#define UART2_INTERRUPT  // test the use of interrupt handler for incoming UART data
+#define UART2_INTERRUPT  // test the use of interrupt handler for incoming UART data
 
 // global variables accessed by interrupt service routines
 // ISR variables for the He-100 interface on UART2
@@ -51,16 +52,19 @@ volatile int isdata_flag = 0;
 volatile int he100_acknack = 0;
 volatile int he100_receive = 0;
 volatile unsigned char he100_head[8]; // command code, payload length, and checksum bytes
-volatile unsigned char he100_data[256]; // data payload from He-100
+volatile unsigned char he100_data[258]; // data payload from He-100
 
 #ifdef UART2_INTERRUPT
 // test code for UART2 receive interrupt handler
 void _ISR _U2RXInterrupt (void)
 {
+    int i;
+    unsigned char ck_a, ck_b; // checksum bytes
+    
     // read a single character from the UART2 receive buffer
     u2rx_char = U2RXREG;
     
-    // copy received characters to UART1 (RS-232)
+    // indicate received char by writing ASCII 1 to UART1 (RS-232)
     while (U1STAbits.UTXBF);      // wait if the transmit buffer is full)
     U1TXREG = 0x31;
     
@@ -109,8 +113,6 @@ void _ISR _U2RXInterrupt (void)
         // reached the end of the header, so compute checksum for bytes 2 through 5
         if (nhbytes == 8)
         {
-            int i;
-            unsigned char ck_a, ck_b;
             ck_a = 0;
             ck_b = 0;
             for (i=2 ; i<6 ; i++)
@@ -119,18 +121,20 @@ void _ISR _U2RXInterrupt (void)
                 ck_b += ck_a;
             }
             // check checksum against bytes 6 and 7
-            he100_head[6] = ck_a;
-            he100_head[7] = ck_b;
             if (ck_a == he100_head[6] && ck_b == he100_head[7])
             {
                 // checksum is good: if this is a packet receive, get length
-                // from header bytes 4 and 5, set flag to start retrieving payload
+                // from header bytes 4 and 5, set flag to start retrieving payload.
+                // Adding two additional bytes for the checksum after payload.
                 if (he100_head[3] == 0x04)
                 {
-                    ndbytes = (he100_head[4]<<8 | he100_head[5]);
+                    ndbytes = (he100_head[4]<<8 | he100_head[5]) + 2;
                     data_byte = 0;
                     isdata_flag = 1;
-                    U1TXREG = 0x32; // send a 1, diagnostics
+                    // as a diagnostic to indicate a good header and the start of a
+                    // data payload, write an ASCII 2 to UART1.
+                    while (U1STAbits.UTXBF);
+                    U1TXREG = 0x32;
                 }
                 // if not a receive packet, set flag that ack/nack is ready
                 else
@@ -147,6 +151,10 @@ void _ISR _U2RXInterrupt (void)
                 isdata_flag = 0;
                 he100_acknack = 0;
                 he100_receive = 0;
+                // as a diagnostic to indicate a bad header checksum
+                // on received data, write an ASCII 3 to UART1.
+                while (U1STAbits.UTXBF);
+                U1TXREG = 0x33;
             }
         }
     }
@@ -157,11 +165,46 @@ void _ISR _U2RXInterrupt (void)
         {
             he100_data[data_byte++] = u2rx_char;
         }
-        // this is the last byte, so set flag that receive is complete
+        // this is the last byte, so test the checksum
         if (data_byte == ndbytes)
         {
-            // set flag that data is ready
-            he100_receive = 1;
+            ck_a = 0;
+            ck_b = 0;
+            // Skip the He on header, but include the other 6 header bytes and
+            // the payload
+            for (i=2 ; i<8 ; i++)
+            {
+                ck_a += he100_head[i];
+                ck_b += ck_a;
+            }
+            for (i=0 ; i<(ndbytes-2) ; i++)
+            {
+                ck_a += he100_data[i];
+                ck_b += ck_a;
+            }
+            if (ck_a == he100_data[ndbytes-2] && ck_b == he100_data[ndbytes-1])
+            {
+                // set flag that data is ready
+                he100_receive = 1;
+                // as a diagnostic to indicate a good data checksum
+                // on received data, write an ASCII 4 to UART1.
+                while (U1STAbits.UTXBF);
+                U1TXREG = 0x34;
+            }
+            else
+            {
+                // bad checksum for received data, reject and reset traps 
+                nhbytes = 0;
+                ndbytes = 0;
+                ishead_flag = 0;
+                isdata_flag = 0;
+                he100_acknack = 0;
+                he100_receive = 0;
+                // as a diagnostic to indicate a bad data checksum
+                // on received data, write an ASCII 5 to UART1.
+                while (U1STAbits.UTXBF);
+                U1TXREG = 0x35;
+            }
         }
     }
     // reset the interrupt flag before exit
@@ -403,37 +446,34 @@ int main(void) {
     
     // test He-100 telemetry
     union he100_telem_union telem_union;
-    he100_telemetry(he100_response, telem_union.raw);
-    sprintf(msg,"Telemetry response:");
-    write_string1(msg);
-    for (i=0 ; i<8 ; i++)
+    int he100_telem_iserror = he100_telemetry(telem_union.raw);
+    if (he100_telem_iserror)
     {
-        sprintf(msg,"byte %d: 0x%02x",i,he100_response[i]);
+        sprintf(msg,"He-100 telemetry checksum error!");
         write_string1(msg);
     }
-    sprintf(msg,"Telemetry raw data:");
-    write_string1(msg);
-    for (i=0 ; i<18 ; i++)
+    else
     {
-        sprintf(msg,"byte %d: 0x%02x",i,telem_union.raw[i]);
+        sprintf(msg,"Telemetry raw data:");
+        write_string1(msg);
+        for (i=0 ; i<16 ; i++)
+        {
+            sprintf(msg,"byte %d: 0x%02x",i,telem_union.raw[i]);
+            write_string1(msg);
+        }
+        sprintf(msg,"Telemetry formatted data:");
+        write_string1(msg);
+        sprintf(msg,"Telem: op_counter = %hu",telem_union.telem.op_counter);
+        write_string1(msg);
+        sprintf(msg,"Telem: msp430_temp = %hi",telem_union.telem.msp430_temp);
+        write_string1(msg);
+        sprintf(msg,"Telem: RSSI = %d",telem_union.telem.rssi);
+        write_string1(msg);
+        sprintf(msg,"Telem: bytes received = %lu",telem_union.telem.bytes_received);
+        write_string1(msg);
+        sprintf(msg,"Telem: bytes transmitted = %lu",telem_union.telem.bytes_transmitted);
         write_string1(msg);
     }
-    sprintf(msg,"Telemetry formatted data:");
-    write_string1(msg);
-    sprintf(msg,"Telem: op_counter = %hu",telem_union.telem.op_counter);
-    write_string1(msg);
-    sprintf(msg,"Telem: msp430_temp = %hi",telem_union.telem.msp430_temp);
-    write_string1(msg);
-    sprintf(msg,"Telem: RSSI = %d",telem_union.telem.rssi);
-    write_string1(msg);
-    sprintf(msg,"Telem: bytes received = %lu",telem_union.telem.bytes_received);
-    write_string1(msg);
-    sprintf(msg,"Telem: bytes transmitted = %lu",telem_union.telem.bytes_transmitted);
-    write_string1(msg);
-    sprintf(msg,"Telem: ck_a = 0x%02x",telem_union.telem.ck_a);
-    write_string1(msg);
-    sprintf(msg,"Telem: ck_b = 0x%02x",telem_union.telem.ck_b);
-    write_string1(msg);
     
     
     // test the overrun status of UART2 buffer, report and reset
@@ -447,7 +487,7 @@ int main(void) {
 #endif // end of RS232
     
     // wait here
-    while (1);
+    //while (1);
     
 #ifdef USB
     
@@ -611,9 +651,8 @@ int main(void) {
     char goodpacket_msg[255];
     batv = eps_get_batv();
     // try to get telemetry
-    he100_telemetry(he100_telem);
-    sprintf(acknack_msg,"Startup: BatV = %.2f, RSSI = %d",batv,he100_telem[15]);
-    //sprintf(acknack_msg,"Transmit power level test message");
+    he100_telem_iserror = he100_telemetry(telem_union.raw);
+    sprintf(acknack_msg,"Startup: BatV = %.2f, RSSI = %d",batv,telem_union.telem.rssi);
     he100_transmit_test_msg2(he100_response, acknack_msg);
     
     // test the overrun status of UART2 buffer, report and reset
@@ -671,10 +710,13 @@ int main(void) {
             sprintf(goodpacket_msg,"Valid packet");
             write_string1(goodpacket_msg);
 
-            //batv = eps_get_batv();
-            //he100_telemetry(he100_telem);
-            //sprintf(goodpacket_msg,"Valid packet: BatV = %.2f, RSSI = %d",batv,he100_telem[15]);
-            //he100_transmit_test_msg2(he100_response, goodpacket_msg);
+            batv = eps_get_batv();
+            he100_telem_iserror = he100_telemetry(telem_union.raw);
+            int npacketbytes = ndbytes-21;
+            memcpy(goodpacket_msg,&he100_data[16],npacketbytes);
+            goodpacket_msg[npacketbytes] = 0;
+            //sprintf(goodpacket_msg,"Good packet: BatV = %.2f, RSSI = %d, data bytes = %d",batv,telem_union.telem.rssi, ndbytes);
+            he100_transmit_test_msg2(he100_response, goodpacket_msg);
             
             // reset the UART2 traps
             nhbytes = 0;

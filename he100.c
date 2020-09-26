@@ -68,23 +68,23 @@ int he100_noop(unsigned char* response)
     
     // calculate the response checksum
     he100_checksum(&buf[2],4);
-    // temp put the calc checksum in slots 4 and 5
-    buf[4] = ck_a;
-    buf[5] = ck_b;
     
     // return 1 if the checksum test fails, 0 otherwise
     return ((ck_a != buf[6]) || (ck_b != buf[7]));
 }
 
-void he100_telemetry(unsigned char* response, unsigned char* telem_raw)
+int he100_telemetry(unsigned char* telem_raw)
 {
     int i;
-    unsigned char buf[8];
-    // fill the header
+    unsigned char buf[26]; // buffer big enough for header and telemetry
+    unsigned char ck_a, ck_b; // checksum bytes
+    int is_err = 0;
+
+    // fill the header for command
     buf[0]=0x48; // 'H'
     buf[1]=0x65; // 'e'
     buf[2]=0x10; // command prefix (10 = send)
-    buf[3]=0x07; // command code (01 = no-op)
+    buf[3]=0x07; // command code (07 = retrieve telemetry)
     buf[4]=0x00; // no payload
     buf[5]=0x00; // no payload
     // set the CRC bytes for header
@@ -96,17 +96,32 @@ void he100_telemetry(unsigned char* response, unsigned char* telem_raw)
         write_char2(buf[i]);
     }
     
-    // read 8-byte response from radio board on UART2
-    for (i=0 ; i<8 ; i++)
+    // read 26-byte response from radio board on UART2
+    // 8 bytes header, 16 bytes telemetry data, 2 bytes checksum
+    for (i=0 ; i<26 ; i++)
     {
-        *response++ = read_char2();
+        buf[i] = read_char2();
     }
     
-    // read 16-byte telemetry data +2 checksum bytes into raw array
-    for (i=0 ; i<18 ; i++)
+    // save the checksum, then recalculate
+    ck_a = buf[24];
+    ck_b = buf[25];
+    he100_checksum(&buf[2],22);
+    if (ck_a == buf[24] && ck_b == buf[25])
     {
-        *telem_raw++ = read_char2();
+        // good checksum
+        // copy the 16-byte telemetry data to response, skip header
+        for (i=0 ; i<16 ; i++)
+        {
+            *telem_raw++ = buf[i+8];
+        }
+        is_err = 0;
     }
+    else
+    {
+        is_err = 1;
+    }
+    return is_err;
 }
 
 void he100_transmit_test_msg1(unsigned char* response, float batv)
