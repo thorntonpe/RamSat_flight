@@ -17,10 +17,12 @@
 #include "adc.h"
 #include "eps_bat.h"
 #include "arducam_user.h"
-//#include "imtq.h"
+#include "imtq.h"
 #include "ants.h"
 #include "he100.h"
 #include "security.h"
+#include "hex_lut.h"
+#include "sd_test.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -49,7 +51,6 @@ volatile int ndbytes = 0; // number of data payload bytes expected
 volatile int data_byte;   // current data byte
 volatile int ishead_flag = 0;
 volatile int isdata_flag = 0;
-volatile int he100_acknack = 0;
 volatile int he100_receive = 0;
 volatile unsigned char he100_head[8]; // command code, payload length, and checksum bytes
 volatile unsigned char he100_data[258]; // data payload from He-100
@@ -65,13 +66,14 @@ void _ISR _U2RXInterrupt (void)
     u2rx_char = U2RXREG;
     
     // indicate received char by writing ASCII 1 to UART1 (RS-232)
-    while (U1STAbits.UTXBF);      // wait if the transmit buffer is full)
-    U1TXREG = 0x31;
+    //while (U1STAbits.UTXBF);      // wait if the transmit buffer is full)
+    //U1TXREG = 0x31;
     
     // if a header has not been found, keep checking
     if (!ishead_flag)
     {
         // trap the start of an He-100 output on UART2
+        // All radio UART2 messages start with "He"
         if (u2rx_char == 'H')
         {
             // force the start of a new header 
@@ -83,29 +85,34 @@ void _ISR _U2RXInterrupt (void)
         {
             he100_head[nhbytes++] = u2rx_char;
         }
-        // trap the third byte of He-100 output, and set flag to gather 
-        // remaining header data
+        // trap the third byte of He-100 output. 0x20 indicates a radio response.
         else if (nhbytes == 2 && u2rx_char == 0x20)
         {
-            he100_head[nhbytes++]=u2rx_char;
+            he100_head[nhbytes++] = u2rx_char;
+        }
+        // trap the fourth byte of He-100 output. If this is 0x04 it indicates a 
+        // received packet message, so set flags to gather remaining header data
+        else if (nhbytes == 3 && u2rx_char == 0x04)
+        {
+            he100_head[nhbytes++] = u2rx_char;
             ishead_flag = 1;
             isdata_flag = 0;
         }
-        // any other condition means not a valid header, so reset
+        // any other condition means not a valid receive packet header, so reset
         else
         {
             nhbytes = 0;
             ndbytes = 0;
             ishead_flag = 0;
             isdata_flag = 0;
-            he100_acknack = 0;
             he100_receive = 0;
         }
     }
+    // There is the start of a valid header, but not yet in the data segment
     else if (!isdata_flag)
     {
         // gather remaining header data
-        // trap the command code, payload size, and checksum bytes
+        // trap the payload size and checksum bytes
         if (nhbytes < 8)
         {
             he100_head[nhbytes++] = u2rx_char;
@@ -126,21 +133,13 @@ void _ISR _U2RXInterrupt (void)
                 // checksum is good: if this is a packet receive, get length
                 // from header bytes 4 and 5, set flag to start retrieving payload.
                 // Adding two additional bytes for the checksum after payload.
-                if (he100_head[3] == 0x04)
-                {
-                    ndbytes = (he100_head[4]<<8 | he100_head[5]) + 2;
-                    data_byte = 0;
-                    isdata_flag = 1;
-                    // as a diagnostic to indicate a good header and the start of a
-                    // data payload, write an ASCII 2 to UART1.
-                    while (U1STAbits.UTXBF);
-                    U1TXREG = 0x32;
-                }
-                // if not a receive packet, set flag that ack/nack is ready
-                else
-                {
-                    he100_acknack = 1;
-                }
+                ndbytes = (he100_head[4]<<8 | he100_head[5]) + 2;
+                data_byte = 0;
+                isdata_flag = 1;
+                // as a diagnostic to indicate a good header and the start of a
+                // data payload, write an ASCII 2 to UART1.
+                //while (U1STAbits.UTXBF);
+                //U1TXREG = 0x32;
             }
             // if checksum is bad, reject and reset traps
             else
@@ -149,12 +148,11 @@ void _ISR _U2RXInterrupt (void)
                 ndbytes = 0;
                 ishead_flag = 0;
                 isdata_flag = 0;
-                he100_acknack = 0;
                 he100_receive = 0;
                 // as a diagnostic to indicate a bad header checksum
                 // on received data, write an ASCII 3 to UART1.
-                while (U1STAbits.UTXBF);
-                U1TXREG = 0x33;
+                //while (U1STAbits.UTXBF);
+                //U1TXREG = 0x33;
             }
         }
     }
@@ -184,12 +182,12 @@ void _ISR _U2RXInterrupt (void)
             }
             if (ck_a == he100_data[ndbytes-2] && ck_b == he100_data[ndbytes-1])
             {
-                // set flag that data is ready
+                // set flag that a received data packet is ready
                 he100_receive = 1;
                 // as a diagnostic to indicate a good data checksum
                 // on received data, write an ASCII 4 to UART1.
-                while (U1STAbits.UTXBF);
-                U1TXREG = 0x34;
+                //while (U1STAbits.UTXBF);
+                //U1TXREG = 0x34;
             }
             else
             {
@@ -198,12 +196,11 @@ void _ISR _U2RXInterrupt (void)
                 ndbytes = 0;
                 ishead_flag = 0;
                 isdata_flag = 0;
-                he100_acknack = 0;
                 he100_receive = 0;
                 // as a diagnostic to indicate a bad data checksum
                 // on received data, write an ASCII 5 to UART1.
-                while (U1STAbits.UTXBF);
-                U1TXREG = 0x35;
+                //while (U1STAbits.UTXBF);
+                //U1TXREG = 0x35;
             }
         }
     }
@@ -236,10 +233,14 @@ int main(void) {
 
 #ifdef RS232    
     init_data.u1br_request = 115200; // UART1 desired baud rate
-    // Initialize the UART1 peripheral (He-100 transceiver or USB))
+    // Initialize the UART1 peripheral (RS-232)
+    // this is done outside the init_peripherals() routine since it isn't used 
+    // for flight configuration
     init_data.u1br_actual = init_uart1(FOSC, init_data.u1br_request);
     write_string1("---------------------------------------------");
     write_string1("RamSat flight software: ground testing output (RS232)");
+    sprintf(msg,"test %03d",1);
+    write_string1(msg);
     write_string1("---------------------------------------------");
 
 #endif
@@ -296,7 +297,8 @@ int main(void) {
     
 #ifdef TEST_ARDUCAM
     // switch on power to the cameras
-    unsigned char cameras_on_status = eps_cameras_on();
+    unsigned char cameras_on_status = 1;
+    cameras_on_status = eps_cameras_on();
 #endif
 
 #ifdef TEST_ANTS
@@ -425,24 +427,11 @@ int main(void) {
     write_string1(msg);
 #endif // end of BAT_TELEM
     
+#ifdef HE100
     // test He-100 No-Op
     int he100_noop_iserror = he100_noop(he100_response);
-    sprintf(msg,"No-Op response:");
-    write_string1(msg);
-    for (i=0 ; i<8 ; i++)
-    {
-        sprintf(msg,"byte %d: 0x%02x",i,he100_response[i]);
-        write_string1(msg);
-    }
     sprintf(msg,"He-100 No-Op iserror = %d",he100_noop_iserror);
     write_string1(msg);
-    
-    // test the overrun status of UART2 buffer, report and reset
-    if (U2STAbits.OERR)
-    {
-        write_string1("UART2 buffer overflow error! post-noop");
-        U2STAbits.OERR = 0;
-    }
     
     // test He-100 telemetry
     union he100_telem_union telem_union;
@@ -454,18 +443,9 @@ int main(void) {
     }
     else
     {
-        sprintf(msg,"Telemetry raw data:");
-        write_string1(msg);
-        for (i=0 ; i<16 ; i++)
-        {
-            sprintf(msg,"byte %d: 0x%02x",i,telem_union.raw[i]);
-            write_string1(msg);
-        }
         sprintf(msg,"Telemetry formatted data:");
         write_string1(msg);
         sprintf(msg,"Telem: op_counter = %hu",telem_union.telem.op_counter);
-        write_string1(msg);
-        sprintf(msg,"Telem: msp430_temp = %hi",telem_union.telem.msp430_temp);
         write_string1(msg);
         sprintf(msg,"Telem: RSSI = %d",telem_union.telem.rssi);
         write_string1(msg);
@@ -474,56 +454,56 @@ int main(void) {
         sprintf(msg,"Telem: bytes transmitted = %lu",telem_union.telem.bytes_transmitted);
         write_string1(msg);
     }
-    
-    
+
     // test the overrun status of UART2 buffer, report and reset
     if (U2STAbits.OERR)
     {
         write_string1("UART2 buffer overflow error! post-telemetry");
         U2STAbits.OERR = 0;
     }
-    
-
-#endif // end of RS232
-    
-    // wait here
-    //while (1);
-    
-#ifdef USB
+#endif // HE100
     
 #ifdef TEST_ARDUCAM
     // test camera interfaces
-    write_string2("-----------------------------------");
-    write_string2("Test: Arducam Interfaces and Operation");
-    write_string2("-----------------------------------");
+    write_string1("-----------------------------------");
+    write_string1("Test: Arducam Interfaces and Operation");
+    write_string1("-----------------------------------");
     sprintf(msg,"Cameras power on status = 0x%02x",cameras_on_status);
-    write_string2(msg);
+    write_string1(msg);
     // test the arducam SPI interface with write/read
     int arducam_spi_iserror = test_arducam_spi();
     sprintf(msg,"Arducam SPI: Test is_error = %d", arducam_spi_iserror);
-    write_string2(msg);
+    write_string1(msg);
     // initialize arduchip and OV2640 sensor for both cameras
     int arducam_init_iserror = init_arducam();
     sprintf(msg,"Arducam Init: Test is_error = %d", arducam_init_iserror);
-    write_string2(msg);
+    write_string1(msg);
     // start the image capture test loop
-    //int arducam_capture_iserror = test_arducam_capture();
-    //sprintf(msg,"Arducam Capture: Test is_error = %d", arducam_capture_iserror);
-    //write_string2(msg);
-#endif
+    int arducam_capture_iserror = test_arducam_capture();
+    sprintf(msg,"Arducam Capture: Test is_error = %d", arducam_capture_iserror);
+    write_string1(msg);
+#endif // TEST_ARDUCAM
+    
+    // test directory operations on SD card
+    int sd_list_iserror = test_sd_list();
+    sprintf(msg,"SD Card: list_iserror = %d",sd_list_iserror);
+    write_string1(msg);
     
 #ifdef TEST_IMTQ
     // Simple interface test for iMTQ (magnetorquer)
-    write_string2("-----------------------------------");
-    write_string2("Test: iMTQ interface (no-op command)");
-    write_string2("-----------------------------------");
+    write_string1("-----------------------------------");
+    write_string1("Test: iMTQ interface (no-op command)");
+    write_string1("-----------------------------------");
     imtq_resp_common imtq_common;       // iMTQ response from every command
     imtq_no_op(&imtq_common);
     sprintf(msg,"iMTQ response: command ID = 0x%02x", imtq_common.cc);
-    write_string2(msg);
+    write_string1(msg);
     sprintf(msg,"iMTQ response: status byte = 0x%02x", imtq_common.stat);
-    write_string2(msg);
+    write_string1(msg);
 #endif
+
+#endif // RS-232 interface
+
 
 #ifdef TEST_ANTS    
     // Simple interface test for ANTs (dual dipole antenna module)
@@ -641,19 +621,24 @@ int main(void) {
     
 #endif // TEST_ANTS
 
-#endif // USB
 
 #ifdef UART2_INTERRUPT
     // Test the use of UART2 receive interrupt to handle incoming data packets
     
     // enter the main loop, wait for interrupts
-    char acknack_msg[255];
     char goodpacket_msg[255];
+    char fullpacket_msg[255];
+    char timing_msg[255];
+    for (i=0 ; i<200 ; i++)
+    {
+        timing_msg[i]=65;
+    }
+    timing_msg[200]=0;
     batv = eps_get_batv();
     // try to get telemetry
     he100_telem_iserror = he100_telemetry(telem_union.raw);
-    sprintf(acknack_msg,"Startup: BatV = %.2f, RSSI = %d",batv,telem_union.telem.rssi);
-    he100_transmit_test_msg2(he100_response, acknack_msg);
+    sprintf(goodpacket_msg,"Startup: BatV = %.2f, RSSI = %d",batv,telem_union.telem.rssi);
+    he100_transmit_test_msg2(he100_response, goodpacket_msg);
     
     // test the overrun status of UART2 buffer, report and reset
     if (U2STAbits.OERR)
@@ -677,29 +662,6 @@ int main(void) {
             U2STAbits.OERR = 0;
         }
 
-        //sprintf(msg,"%d",nhbytes);
-        //write_string1(msg);
-        // check for a valid ack/nack response on UART2
-        if (he100_acknack)
-        {
-            // disable the interrupt source
-            _U2RXIE = 0;
-            
-            sprintf(acknack_msg,"Received non-packet, header follows: %02x %02x %02x %02x %02x %02x %02x %02x",he100_head[0],he100_head[1],he100_head[2],he100_head[3],he100_head[4],he100_head[5],he100_head[6],he100_head[7]);
-            write_string1(acknack_msg);
-            // transmit a diagnostic message
-            //he100_transmit_test_msg2(he100_response, acknack_msg);
-            
-            // reset the UART2 traps
-            nhbytes = 0;
-            ndbytes = 0;
-            ishead_flag = 0;
-            isdata_flag = 0;
-            he100_acknack = 0;
-            he100_receive = 0;
-            // enable the interrupt source
-            _U2RXIE = 1;
-        }
         // check for valid data receive on UART2
         if (he100_receive)
         {
@@ -707,23 +669,29 @@ int main(void) {
             _U2RXIE = 0;
             
             // transmit a diagnostic message
-            sprintf(goodpacket_msg,"Valid packet");
-            write_string1(goodpacket_msg);
+            sprintf(msg,"Valid packet");
+            write_string1(msg);
+            
+            for (i=0 ; i<100 ; i++)
+            {
+                sprintf(fullpacket_msg,"packet# %03d",i);
+                memcpy(timing_msg, fullpacket_msg, 11);
+                he100_transmit_test_msg2(he100_response, timing_msg);
+            }
 
-            batv = eps_get_batv();
-            he100_telem_iserror = he100_telemetry(telem_union.raw);
-            int npacketbytes = ndbytes-21;
-            memcpy(goodpacket_msg,&he100_data[16],npacketbytes);
-            goodpacket_msg[npacketbytes] = 0;
-            //sprintf(goodpacket_msg,"Good packet: BatV = %.2f, RSSI = %d, data bytes = %d",batv,telem_union.telem.rssi, ndbytes);
-            he100_transmit_test_msg2(he100_response, goodpacket_msg);
+            //batv = eps_get_batv();
+            //he100_telem_iserror = he100_telemetry(telem_union.raw);
+            //int npacketbytes = ndbytes-21;
+            //memcpy(goodpacket_msg,&he100_data[16],npacketbytes);
+            //goodpacket_msg[npacketbytes] = 0;
+            //sprintf(fullpacket_msg,"RamSat: %s",goodpacket_msg);
+            //he100_transmit_test_msg2(he100_response, fullpacket_msg);
             
             // reset the UART2 traps
             nhbytes = 0;
             ndbytes = 0;
             ishead_flag = 0;
             isdata_flag = 0;
-            he100_acknack = 0;
             he100_receive = 0;
             // enable the interrupt source
             _U2RXIE = 1;

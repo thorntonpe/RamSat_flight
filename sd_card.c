@@ -980,6 +980,116 @@ ExitClose:
 } // fcloseM
 
 //-------------------------------------------------------------
+// Get meta data for the fnum file in FAT
+//
+unsigned flistM( MFILE *fp, int fnum)
+{
+    unsigned eCount,fCount;     // current entry counter
+    unsigned e;                 // current entry offset 
+    int a;             
+    unsigned char *b;       
+
+    // check if fp is allocated
+    if (fp == NULL)
+    {
+        FError = FE_MALLOC_FAILED;
+        return FError;
+    }
+    
+    // check if storage device is mounted 
+    if ( D == NULL)       // unmounted
+    {
+        FError = FE_MEDIA_NOT_MNTD;
+        return FError;
+    }
+    
+    // allocate a buffer for the file
+    b = (unsigned char*)malloc( 512);
+    if ( b == NULL)
+    {   
+        FError = FE_MALLOC_FAILED;
+        return FError;
+    }
+    
+    // assumes there a MFILE structure allocated on the heap
+    // set pointers to the MEDIA structure and buffer
+    fp->mda = D;
+    fp->buffer = b;
+
+    MEDIA *mda = fp->mda;
+    
+    // start from the first entry
+    eCount = 0;
+    fCount = 0;
+
+    // load the first sector of root
+    if ( !ReadDIR( fp, eCount))
+    {
+        free(b);
+        return FAIL;
+    }
+            
+    // loop until reaching the requested file number
+    while ( 1)
+    {
+    // 2.0 determine the offset in current buffer
+        e = (eCount&0xf) * DIR_ESIZE;
+
+    // 2.1 read the first char of the file name 
+        a = fp->buffer[ e + DIR_NAME]; 
+
+    // 2.2 if it is empty (end of the list), return FAIL       
+        if ( a == DIR_EMPTY)
+        {
+            free(b);
+            return FAIL;
+        } // empty entry
+
+    // 2.3 skip erased entries 
+        if ( a != DIR_DEL)
+        {
+        // 2.3.1 if not VOLume or DIR compare the names
+            a = fp->buffer[ e + DIR_ATTRIB];
+            if ( !(a & (ATT_DIR | ATT_HIDE)) )
+            {
+                // this is a valid file entry
+                if (fCount == fnum)
+                {
+                    // get the filename and extension, and file size (long)
+                    memcpy(fp->name,fp->buffer+e+DIR_NAME,8);
+                    memcpy(fp->name+8,fp->buffer+e+DIR_EXT,3);
+                    memcpy(&fp->size,fp->buffer+e+DIR_SIZE,4);
+                    memcpy(&fp->date,fp->buffer+e+DIR_CDATE,2);
+                    memcpy(&fp->time,fp->buffer+e+DIR_CTIME,2);
+                    return 0;
+                }
+                fCount++;
+            } // not dir nor vol
+        } // not deleted
+        
+    // 2.4 get the next entry
+        eCount++;
+        if ( (eCount & 0xf) == 0)
+        {   // load a new sector from the Dir
+            if ( !ReadDIR( fp, eCount))
+            {
+                free(b);
+                return FAIL;
+            }
+        }
+
+    //  2.5. exit the loop if reached the end or error
+        if ( eCount >= mda->maxroot)
+        {
+            free(b);
+            return NOT_FOUND;       // last entry reached
+        }
+    
+    }// while 
+    
+} // flistM
+
+//-------------------------------------------------------------
 // Find a File entry in current directory
 //
 unsigned FindDIR( MFILE *fp)
@@ -1055,6 +1165,114 @@ unsigned FindDIR( MFILE *fp)
     }// while 
     
 } // FindDIR
+
+//-------------------------------------------------------------
+// Count the files in current directory
+//
+unsigned CountDIR(unsigned *fnum)
+// fp       file structure
+// return   number of files 
+{
+    unsigned eCount,fCount;     // current entry counter
+    unsigned e;                 // current entry offset 
+    int a;             
+    unsigned char *b;       
+    MFILE *fp;              
+
+    // 1.  check if storage device is mounted 
+    if ( D == NULL)       // unmounted
+    {
+        FError = FE_MEDIA_NOT_MNTD;
+        return FError;
+    }
+    
+    // 2. allocate a buffer for the file
+    b = (unsigned char*)malloc( 512);
+    if ( b == NULL)
+    {   
+        FError = FE_MALLOC_FAILED;
+        return FError;
+    }
+    
+    // 3. allocate a MFILE structure on the heap
+    fp = (MFILE *) malloc( sizeof( MFILE));
+    if ( fp == NULL)            // report an error  
+    {   
+        FError = FE_MALLOC_FAILED;
+        free( b);
+        return FError;
+    }
+    
+    // 4. set pointers to the MEDIA structure and buffer
+    fp->mda = D;
+    fp->buffer = b;
+
+    MEDIA *mda = fp->mda;
+    
+    // 1. start from the first entry
+    eCount = 0;
+    fCount = 0;
+
+    // load the first sector of root
+    if ( !ReadDIR( fp, eCount))
+    {
+        free(b);
+        free(fp);
+        return FAIL;
+    }
+            
+    // 2. loop until you reach the end
+    while ( 1)
+    {
+    // 2.0 determine the offset in current buffer
+        e = (eCount&0xf) * DIR_ESIZE;
+
+    // 2.1 read the first char of the file name 
+        a = fp->buffer[ e + DIR_NAME]; 
+
+    // 2.2 if it is empty (end of the list), set fnum and return       
+        if ( a == DIR_EMPTY)
+        {
+            free(b);
+            free(fp);
+            *fnum = fCount;
+            return 0;
+        } // empty entry
+
+    // 2.3 skip erased entries 
+        if ( a != DIR_DEL)
+        {
+        // 2.3.1 if not VOLume or DIR compare the names
+            a = fp->buffer[ e + DIR_ATTRIB];
+            if ( !(a & (ATT_DIR | ATT_HIDE)) )
+            {   
+                fCount++;
+            } // not dir nor vol
+        } // not deleted
+        
+    // 2.4 get the next entry
+        eCount++;
+        if ( (eCount & 0xf) == 0)
+        {   // load a new sector from the Dir
+            if ( !ReadDIR( fp, eCount))
+            {
+                free(b);
+                free(fp);
+                return FAIL;
+            }
+        }
+
+    //  2.5. exit the loop if reached the end or error
+        if ( eCount >= mda->maxroot)
+        {
+            free(b);
+            free(fp);
+            return NOT_FOUND;       // last entry reached
+        }
+    
+    }// while 
+    
+} // CountDIR
 
 //-------------------------------------------------------------
 // 

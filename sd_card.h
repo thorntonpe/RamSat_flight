@@ -99,6 +99,7 @@ unsigned WriteFAT( MFILE *fp, unsigned cls, unsigned v);
 unsigned ReadDIR( MFILE *fp, unsigned entry);
 unsigned WriteDIR( MFILE *fp, unsigned entry);
 unsigned FindDIR( MFILE *fp);
+unsigned CountDIR(unsigned *fCount);
 unsigned NewDIR ( MFILE *fp);
 
 MEDIA * SD_mount( void);
@@ -110,6 +111,8 @@ unsigned freadM  ( void * dest, unsigned count, MFILE *);
 unsigned fwriteM ( void * src, unsigned count, MFILE *);
 unsigned fcloseM ( MFILE *);
 unsigned fseekM  ( MFILE *, unsigned);
+unsigned flistM( MFILE *fp, int fnum);
+
 
 unsigned listTYPE( char *list, int max, const char *ext );// define a Logic Block Address (LBA) type, 32 bits wide
 

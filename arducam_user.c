@@ -92,15 +92,15 @@ int test_arducam_capture(void)
 
     while (1)
     {
-        write_string2("----- Begin image capture test -----");
-        write_string2("Press '1' or '2' to take a picture with camera 1 or 2.");
-        write_string2("Press 'm' to mount, 'u' to unmount SD card.");
-        write_string2("Press 'x' to exit test.");
+        write_string1("----- Begin image capture test -----");
+        write_string1("Press '1' or '2' to take a picture with camera 1 or 2.");
+        write_string1("Press 'm' to mount, 'u' to unmount SD card.");
+        write_string1("Press 'x' to exit test.");
         
         // get and echo a character of user input
-        ui = read_char2();
+        ui = read_char1();
         sprintf(msg,"%c", ui);
-        write_string2(msg);
+        write_string1(msg);
 
         // 'm' mount SD card
         if (ui == 'm')
@@ -108,17 +108,17 @@ int test_arducam_capture(void)
             // if SD card is already mounted, complain and restart loop
             if (mounted)
             {
-                write_string2("Invalid mount command: SD card already mounted.");
+                write_string1("Invalid mount command: SD card already mounted.");
                 continue;                
             }
             // Attempt to mount the SD card, report result
             sd_dat = SD_mount();
             if (!sd_dat)
             {
-                write_string2("Failed to mount SD card.");
+                write_string1("Failed to mount SD card.");
                 continue;
             }
-            write_string2("Mounted SD card.");
+            write_string1("Mounted SD card.");
             mounted = 1;
         }
         
@@ -128,12 +128,12 @@ int test_arducam_capture(void)
             // if SD card is not mounted, complain and restart loop
             if (!mounted)
             {
-                write_string2("Invalid unmount command: SD card is not mounted.");
+                write_string1("Invalid unmount command: SD card is not mounted.");
                 continue;
             }
             // unmount the SD card
             SD_umount();
-            write_string2("Unmounted SD card: can now be removed.");
+            write_string1("Unmounted SD card: can now be removed.");
             mounted = 0;
         }
         
@@ -142,8 +142,8 @@ int test_arducam_capture(void)
         {
             if (!mounted)
             {
-                write_string2("Invalid capture command: SD card is not mounted.");
-                write_string2("Make sure card is inserted, and then press 'm' to mount...");
+                write_string1("Invalid capture command: SD card is not mounted.");
+                write_string1("Make sure card is inserted, and then press 'm' to mount...");
                 continue;
             }
             // open a file in write mode, for image data output
@@ -152,7 +152,7 @@ int test_arducam_capture(void)
             if (!fp1)
             {
                 sprintf(msg,"File open error #%d",FError);
-                write_string2(msg);
+                write_string1(msg);
                 continue;
             }
             // increment the image number
@@ -160,17 +160,17 @@ int test_arducam_capture(void)
             // clear the arducam output buffer
             arduchip_clear_fifo(CAM1);
             // indicate start of image capture
-            write_string2("--------------------------------------");
+            write_string1("--------------------------------------");
             sprintf(msg,"Begin capture for %s", fname);
-            write_string2(msg);
+            write_string1(msg);
             // capture an image from the camera
             cap_msec_cam1 = arduchip_start_capture(CAM1);
             // read the size of camera fifo buffer
             fifo_length_cam1 = arduchip_fifo_length(&len1_cam1, &len2_cam1, &len3_cam1, CAM1);
             sprintf(msg,"Capture time camera #1 = %ld msec", cap_msec_cam1);
-            write_string2(msg);
+            write_string1(msg);
             sprintf(msg,"FIFO length camera #1= %ld bytes", fifo_length_cam1);
-            write_string2(msg);
+            write_string1(msg);
             // start reading if the length is non-zero
             if (fifo_length_cam1)  
             {
@@ -199,15 +199,15 @@ int test_arducam_capture(void)
                 }
                 CS_CAM1 = 1;  // deselect the device
                 sprintf(msg,"Wrote %ld bytes to file",totb);
-                write_string2(msg);
+                write_string1(msg);
                 // clear the arducam output buffer
                 arduchip_clear_fifo(CAM1);
             }
             else
             {
-                write_string2("FIFO empty! No data written to file.");
+                write_string1("FIFO empty! No data written to file.");
             }
-            write_string2("--------------------------------------");
+            write_string1("--------------------------------------");
             // close the file
             fcloseM(fp1);
         } // end if ui == '1'
@@ -217,8 +217,8 @@ int test_arducam_capture(void)
         {
             if (!mounted)
             {
-                write_string2("Invalid capture command: SD card is not mounted.");
-                write_string2("Make sure card is inserted, and then press 'm' to mount...");
+                write_string1("Invalid capture command: SD card is not mounted.");
+                write_string1("Make sure card is inserted, and then press 'm' to mount...");
                 continue;
             }
             // open a file in write mode, for image data output
@@ -227,7 +227,7 @@ int test_arducam_capture(void)
             if (!fp1)
             {
                 sprintf(msg,"File open error #%d",FError);
-                write_string2(msg);
+                write_string1(msg);
                 continue;
             }
             // increment the image number
@@ -235,17 +235,17 @@ int test_arducam_capture(void)
             // clear the arducam output buffer
             arduchip_clear_fifo(CAM2);
             // indicate start of image capture
-            write_string2("--------------------------------------");
+            write_string1("--------------------------------------");
             sprintf(msg,"Begin capture for %s", fname);
-            write_string2(msg);
+            write_string1(msg);
             // capture an image from the camera
             cap_msec_cam2 = arduchip_start_capture(CAM2);
             // read the size of camera fifo buffer
             fifo_length_cam2 = arduchip_fifo_length(&len1_cam2, &len2_cam2, &len3_cam2, CAM2);
             sprintf(msg,"Capture time camera #2 = %ld msec", cap_msec_cam2);
-            write_string2(msg);
+            write_string1(msg);
             sprintf(msg,"FIFO length camera #2= %ld bytes", fifo_length_cam2);
-            write_string2(msg);
+            write_string1(msg);
             // start reading if the length is non-zero
             if (fifo_length_cam2)  
             {
@@ -274,15 +274,15 @@ int test_arducam_capture(void)
                 }
                 CS_CAM2 = 1;  // deselect the device
                 sprintf(msg,"Wrote %ld bytes to file",totb);
-                write_string2(msg);
+                write_string1(msg);
                 // clear the arducam output buffer
                 arduchip_clear_fifo(CAM2);
             }
             else
             {
-                write_string2("FIFO empty! No data written to file.");
+                write_string1("FIFO empty! No data written to file.");
             }
-            write_string2("--------------------------------------");
+            write_string1("--------------------------------------");
             // close the file
             fcloseM(fp1);
         } // end if ui == '2'
@@ -290,10 +290,10 @@ int test_arducam_capture(void)
         // option to break out of image capture loop
         if (ui == 'x')
         {
-            write_string2("Exit image capture.");
+            write_string1("Exit image capture.");
             if (mounted)
             {
-                write_string2("Un-mounting SD card.");
+                write_string1("Un-mounting SD card.");
                 SD_umount();
             }
             break;

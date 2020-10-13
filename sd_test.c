@@ -10,6 +10,7 @@
 #include "sd_card.h"
 #include "uart.h"
 #include "sd_test.h"
+#include <stdlib.h>     // malloc...
 #include <stdio.h>
 #include <string.h>
 
@@ -223,4 +224,81 @@ int test_sd_delete(void)
     SD_umount();
     
     return err;
+}
+
+// test: mount SD card, list all files from FAT with output to RS232
+int test_sd_list(void)
+{
+    int err = 0;
+    int i;
+    unsigned num_files = 0;
+    char name[9];
+    char ext[4];
+    char msg[128];      // character string for messages to user via COM port
+    name[8]=0;
+    ext[3]=0;
+    // attempt to mount SD card
+    sd_dat = SD_mount();
+    if (!sd_dat)
+    {
+        err = FError;
+        return err;
+    }
+    
+    // write out MEDIA metadata
+    sprintf(msg,"SD Card: Max entries in root dir = %u",sd_dat->maxroot);
+    write_string1(msg);
+    sprintf(msg,"SD Card: Max clusters in partition = %u",sd_dat->maxcls);
+    write_string1(msg);
+    sprintf(msg,"SD Card: Number of sectors = %u",sd_dat->fatsize);
+    write_string1(msg);
+    sprintf(msg,"SD Card: Number of copies of FAT = %u",sd_dat->fatcopy);
+    write_string1(msg);
+    sprintf(msg,"SD Card: Number of sectors per cluster = %u",sd_dat->sxc);
+    write_string1(msg);
+    
+    // Now write out metadata for all files
+    // first get the count of files on the card
+    err = CountDIR(&num_files);
+    sprintf(msg,"SD Card: Number of files = %u",num_files);
+    write_string1(msg);
+    
+    // now go through all files and get filenames and sizes
+    // allocate a MFILE structure on the heap
+    fp1 = (MFILE *) malloc( sizeof( MFILE));
+    if ( fp1 == NULL)            // report an error  
+    {   
+        FError = FE_MALLOC_FAILED;
+        return FError;
+    }
+    for (i=0 ; i<num_files ; i++)
+    {
+        err = flistM(fp1, i);
+        if (err)
+        {
+            sprintf(msg,"SD File List: error = %d",err);
+            write_string1(msg);
+            continue;
+        }
+        // print file info
+        memcpy(name,fp1->name,8);
+        memcpy(ext,fp1->name+8,3);
+        int year = (fp1->date>>9  & 0x7f) + 1980;
+        int mon  = fp1->date>>5  & 0x0f;
+        int day  = fp1->date     & 0x1f;
+        int hrs  = fp1->time>>11 & 0x1f;
+        int min  = fp1->time>>5  & 0x3f;
+        int sec  = (fp1->time     & 0x1f) *2;
+        sprintf(msg,"File# %d: Name: %s.%s Size: %ld Date: %d-%d-%d Time: %d:%d:%d",
+                i,name,ext,fp1->size,year,mon,day,hrs,min,sec);
+        write_string1(msg);
+    }
+    sprintf(msg,"SD Card: CountDIR iserror = %u",err);
+    write_string1(msg);
+    
+    
+    // unmount the SD card
+    SD_umount();
+    
+    return err;            
 }
