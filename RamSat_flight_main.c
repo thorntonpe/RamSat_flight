@@ -21,8 +21,9 @@
 #include "ants.h"
 #include "he100.h"
 #include "security.h"
-#include "hex_lut.h"
 #include "sd_test.h"
+#include "command.h"
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -626,6 +627,13 @@ int main(void) {
     // Test the use of UART2 receive interrupt to handle incoming data packets
     
     // enter the main loop, wait for interrupts
+    char uplink_cmd[255];   // holds the latest uplinked command and parameters
+    char cmd_idstr[3];      // null-terminated string for the command ID
+    cmd_idstr[2]=0;         // null termination
+    char cmd_paramstr[255]; // parameters passed in uplink command
+    int cmd_id;             // integer value for command ID
+    int cmd_err;            // return value for command handlers
+    
     char goodpacket_msg[255];
     char fullpacket_msg[255];
     char timing_msg[255];
@@ -651,8 +659,6 @@ int main(void) {
     _U2RXIF = 0;
     _U2RXIE = 1;
     
-    // set a watchdog kick timer
-    //TMR1 = 0;
     while (1)
     {
         // test the overrun status of UART2 buffer, report and reset
@@ -672,31 +678,71 @@ int main(void) {
             sprintf(msg,"Valid packet");
             write_string1(msg);
             
-            for (i=0 ; i<100 ; i++)
+            // parse the packet to look for a command
+            // discard extra bytes at beginning and end of packet
+            int uplink_nbytes = ndbytes - (HEAD_NBYTES+TAIL_NBYTES);
+            // copy the good part of uplink packet into local array
+            memcpy(uplink_cmd,&he100_data[HEAD_NBYTES],uplink_nbytes);
+            // check for the uplink command security key
+            if (!memcmp(uplink_cmd,seckey,NKEY))
             {
-                sprintf(fullpacket_msg,"packet# %03d",i);
-                memcpy(timing_msg, fullpacket_msg, 11);
-                he100_transmit_test_msg2(he100_response, timing_msg);
+                // good security key, continue processing as a valid command
+                // strip the command ID and any parameters out of the 
+                // uplinked packet as separate pieces
+                memcpy(cmd_idstr,uplink_cmd+NKEY,2);
+                memcpy(cmd_paramstr,uplink_cmd+NKEY+2,uplink_nbytes-(NKEY+2));
+                cmd_id = atoi(cmd_idstr);
+                
+                // the main switch-case statement that processes commands
+                switch(cmd_id)
+                {
+                    case 1: // return the number of files on SD card
+                        cmd_err = CmdFileCount();
+                        break;
+                    case 2: // list details for each file on SD card
+                        cmd_err = CmdFileList();
+                        break;
+                    case 3: // dump the contents of a named file
+                        cmd_err = CmdFileDump(cmd_paramstr);
+                        break;
+                    default:
+                        sprintf(msg,"Received an invalid command ID");
+                        write_string1(msg);
+                }
+            } // good seckey
+            else
+            {
+                // bad or missing security key
+                sprintf(msg,"Incorrect security key in received packet");
+                write_string1(msg);
             }
+            
+            
+            //for (i=0 ; i<100 ; i++)
+            //{
+            //    sprintf(fullpacket_msg,"packet# %03d",i);
+            //    memcpy(timing_msg, fullpacket_msg, 11);
+            //    he100_transmit_test_msg2(he100_response, timing_msg);
+            //}
 
             //batv = eps_get_batv();
             //he100_telem_iserror = he100_telemetry(telem_union.raw);
-            //int npacketbytes = ndbytes-21;
-            //memcpy(goodpacket_msg,&he100_data[16],npacketbytes);
+            int npacketbytes = ndbytes-21;
+            memcpy(goodpacket_msg,&he100_data[16],npacketbytes);
             //goodpacket_msg[npacketbytes] = 0;
             //sprintf(fullpacket_msg,"RamSat: %s",goodpacket_msg);
             //he100_transmit_test_msg2(he100_response, fullpacket_msg);
             
-            // reset the UART2 traps
+            // reset the UART2 receive traps
             nhbytes = 0;
             ndbytes = 0;
             ishead_flag = 0;
             isdata_flag = 0;
             he100_receive = 0;
-            // enable the interrupt source
+            // re-enable the UART2 receive interrupt
             _U2RXIE = 1;
         }
     }
-#endif
+#endif // use UART2 interrupt
     
 }

@@ -5,12 +5,16 @@
  * Revision history: 3/2/2020
  */
 
+#define HEAD_NBYTES 16   // Number of extra bytes at head of received packet
+#define TAIL_NBYTES  5   // Number of extra bytes at tail of received packet
+
 void he100_checksum(unsigned char *buf, int nbytes);
 int he100_noop(unsigned char* response);
 int he100_telemetry(unsigned char* telem_raw);
 void he100_transmit_test_msg1(unsigned char* response, float batv);
 void he100_transmit_test_msg2(unsigned char* response, char* msg);
 void he100_transmit_test_msg3(unsigned char* response);
+void he100_transmit_packet(unsigned char* response, char* data);
 
 // telemetry data structures
 struct he100_telem_struct {

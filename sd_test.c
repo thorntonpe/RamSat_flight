@@ -296,9 +296,9 @@ int test_sd_list(void)
     sprintf(msg,"SD Card: CountDIR iserror = %u",err);
     write_string1(msg);
     
-    
-    // unmount the SD card
+    // unmount the SD card and free memory
     SD_umount();
+    free(fp1);
     
     return err;            
 }

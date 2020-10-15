@@ -258,3 +258,48 @@ void he100_transmit_test_msg3(unsigned char* response)
     }
     *response = read_char2();
 }
+
+void he100_transmit_packet(unsigned char* response, char* data)
+{
+    int i;
+    unsigned char buf[250];
+    unsigned char data_len;
+    int packet_len;
+    
+    // length of test message
+    data_len = (unsigned char)strlen(data);
+    // packet length = header(8) + data_len + checksum(2)
+    packet_len = 8 + data_len + 2;
+    
+    // fill the header
+    buf[0]=0x48;     // 'H'
+    buf[1]=0x65;     // 'e'
+    buf[2]=0x10;     // command prefix (10 = send)
+    buf[3]=0x03;     // command code (03 = transmit)
+    buf[4]=0x00;     // payload size, MSB
+    buf[5]=data_len; // payload size, LSB
+    // set the CRC bytes for header (skip first two bytes))
+    he100_checksum(&buf[2],4);
+    
+    // fill the payload
+    for (i=0 ; i<data_len ; i++)
+    {
+        buf[8+i]=data[i];
+    }
+    // checksum for entire packet (skip first two bytes of header)
+    he100_checksum(&buf[2],6+data_len);
+    
+    // write complete packet to UART2 for transmission
+    for (i=0 ; i<packet_len ; i++)
+    {
+        write_char2(buf[i]);
+    }
+    
+    // read 8-byte response from radio board on UART2
+    for (i=0 ; i<7 ; i++)
+    {
+        *response++ = read_char2();
+    }
+    *response = read_char2();
+}
+
