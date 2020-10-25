@@ -449,6 +449,7 @@ void imtq_start_actpwm(imtq_resp_common* imtq_common, signed short pwm_x, signed
     int cmd_id = 0x07;
     int cmd_nbytes = 9;
     int rsp_nbytes = 2;
+    
     // fill the command bytes
     command[0] = cmd_id;
     // little-endian copy of pwm_x

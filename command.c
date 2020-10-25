@@ -15,14 +15,13 @@
 #include <stdio.h>
 #include <string.h>
 
-#define B_SIZE 100            // buffer size for reading files
+#define B_SIZE 10            // buffer size for reading files
 #define B_SIZE2 (B_SIZE*2)+1  // buffer to hold the ascii hex equivalent
 
 // a common array for downlink data
 char downlink_data[255];
 // a common array for He-100 response to transmit command
 unsigned char he100_response[8];
-
 
 // Return the number of files on SD card
 int CmdFileCount(void)
@@ -64,10 +63,10 @@ int CmdFileCount(void)
 int CmdFileList(void)
 {
     int err = 0;
-    int i;
-    unsigned nfiles;
     MEDIA * sd_dat;    // pointer to SD card data structure
     MFILE * fp1;       // pointer to file data structure
+    int i;
+    unsigned nfiles;
     char name[9];      // file name
     char ext[4];       // file extension
     name[8]=0;         // null termination
@@ -144,11 +143,11 @@ int CmdFileList(void)
 int CmdFileDump(char *paramstr)
 {
     int err = 0;
+    MEDIA * sd_dat;    // pointer to SD card data structure
+    MFILE * fp1;       // pointer to file data structure
     int i;
     char fname[13];
     fname[12]=0;
-    MEDIA * sd_dat;           // pointer to SD card data structure
-    MFILE * fp1;              // pointer to file data structure
     char file_data[B_SIZE];   // the latest chunk of data read from file
     char hex_data[B_SIZE2];   // the two-byte hex equivalent of the file data
     unsigned bytes_read;      // the number of bytes in most recent read
@@ -220,5 +219,10 @@ int CmdFileDump(char *paramstr)
         sprintf(downlink_data,"RamSat: %s dump complete, incorrect packet count: %d",fname, packet_num);
         he100_transmit_packet(he100_response, downlink_data);
         err = 0;
-    }return err;
+    }
+    
+    // unmount the SD card, free memory, and return
+    SD_umount();
+    free(fp1);
+    return err;            
 }

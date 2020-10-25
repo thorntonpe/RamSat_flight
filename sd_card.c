@@ -1061,6 +1061,7 @@ unsigned flistM( MFILE *fp, int fnum)
                     memcpy(&fp->size,fp->buffer+e+DIR_SIZE,4);
                     memcpy(&fp->date,fp->buffer+e+DIR_CDATE,2);
                     memcpy(&fp->time,fp->buffer+e+DIR_CTIME,2);
+                    free(b);
                     return 0;
                 }
                 fCount++;

@@ -37,7 +37,7 @@
 //#define INIT_RTC   // Pre-flight code to initialize RTC
 //#define INIT_PREDEPLOY // Pre-flight code to set MUST_WAIT flag
 //#define TEST_ARDUCAM
-//#define TEST_IMTQ
+#define TEST_IMTQ
 //#define TEST_ANTS
 //#define ANTS_DEPLOY  // just the arm/disarm steps
 //#define ANTS_DEPLOY2 // include the actual deployment steps
@@ -501,6 +501,10 @@ int main(void) {
     write_string1(msg);
     sprintf(msg,"iMTQ response: status byte = 0x%02x", imtq_common.stat);
     write_string1(msg);
+    imtq_start_actpwm(&imtq_common,0,0,500,1000);
+    
+    // hold here
+    while (1);
 #endif
 
 #endif // RS-232 interface
