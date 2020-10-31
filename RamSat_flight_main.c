@@ -23,6 +23,7 @@
 #include "security.h"
 #include "sd_test.h"
 #include "command.h"
+#include "sgp4.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -37,12 +38,15 @@
 //#define INIT_RTC   // Pre-flight code to initialize RTC
 //#define INIT_PREDEPLOY // Pre-flight code to set MUST_WAIT flag
 //#define TEST_ARDUCAM
-#define TEST_IMTQ
+//#define TEST_IMTQ
 //#define TEST_ANTS
 //#define ANTS_DEPLOY  // just the arm/disarm steps
 //#define ANTS_DEPLOY2 // include the actual deployment steps
 #define BAT_TELEM  // include outputs for battery telemetry on RS232
 #define UART2_INTERRUPT  // test the use of interrupt handler for incoming UART data
+
+// global variable for the current TLE
+tle_t tle;
 
 // global variables accessed by interrupt service routines
 // ISR variables for the He-100 interface on UART2
@@ -213,6 +217,20 @@ void _ISR _U2RXInterrupt (void)
 int main(void) {
     
     init_data_type init_data; // data structure for peripheral initialization
+    
+    // flags controlling the main program loop
+    int isNewTLE = 0;   // flag is set immediately after a new TLE is uplinked
+    int isGoodTLE = 0;  // flag is set when a current TLE is available
+    
+    // Variables used in orbital prediction
+    double jd;          // The current julian date, from RTC
+    double t_since;     // Time since epoch of current TLE, in minutes
+    double sat_params[N_SAT_PARAMS]; // parameters needed by the SGP4 code
+    double pos[3];      // Satellite position vector 
+    double lat;         // current latitude (radians)
+    double lon;         // current longitude (radians)
+    double elev;        // current elevation of orbit (km)
+    int sgp4_ret;       // return value for the main SGP4 call
     
     // Initialize TIMER1 (16-bit), using system clock and 1:256 prescalar
     T1CON = 0x8030;
@@ -638,24 +656,23 @@ int main(void) {
     int cmd_id;             // integer value for command ID
     int cmd_err;            // return value for command handlers
     
-    char goodpacket_msg[255];
-    char fullpacket_msg[255];
-    char timing_msg[255];
-    for (i=0 ; i<200 ; i++)
-    {
-        timing_msg[i]=65;
-    }
-    timing_msg[200]=0;
+    char downlink_msg[255]; // Response/message to be downlinked by RamSat
+
+    // Retrieve battery telemetry for startup message
     batv = eps_get_batv();
-    // try to get telemetry
+    
+    // Retrieve He-100 telemetry for startup message
     he100_telem_iserror = he100_telemetry(telem_union.raw);
-    sprintf(goodpacket_msg,"Startup: BatV = %.2f, RSSI = %d",batv,telem_union.telem.rssi);
-    he100_transmit_test_msg2(he100_response, goodpacket_msg);
+    
+    // Downlink the startup message
+    sprintf(downlink_msg,"RamSat: Startup BatV = %.2f, RSSI = %d",batv,telem_union.telem.rssi);
+    he100_transmit_packet(he100_response, downlink_msg);
     
     // test the overrun status of UART2 buffer, report and reset
     if (U2STAbits.OERR)
     {
-        write_string1("UART2 buffer overflow error!");
+        sprintf(downlink_msg,"RamSat: Startup UART2 buffer overflow error!");
+        he100_transmit_packet(he100_response, downlink_msg);
         U2STAbits.OERR = 0;
     }
 
@@ -668,7 +685,8 @@ int main(void) {
         // test the overrun status of UART2 buffer, report and reset
         if (U2STAbits.OERR)
         {
-            write_string1("UART2 buffer overflow error!");
+            sprintf(downlink_msg,"RamSat: Main loop UART2 buffer overflow error!");
+            he100_transmit_packet(he100_response, downlink_msg);
             U2STAbits.OERR = 0;
         }
 
@@ -681,10 +699,14 @@ int main(void) {
             // transmit a diagnostic message
             sprintf(msg,"Valid packet");
             write_string1(msg);
+            sprintf(downlink_msg,"RamSat: Valid packet received, entering command interpreter.");
+            he100_transmit_packet(he100_response, downlink_msg);
             
             // parse the packet to look for a command
             // discard extra bytes at beginning and end of packet
+            // calculate the length of entire uplink command, and the parameter part
             int uplink_nbytes = ndbytes - (HEAD_NBYTES+TAIL_NBYTES);
+            int param_nbytes = uplink_nbytes-(NKEY+2);
             // copy the good part of uplink packet into local array
             memcpy(uplink_cmd,&he100_data[HEAD_NBYTES],uplink_nbytes);
             // check for the uplink command security key
@@ -694,7 +716,7 @@ int main(void) {
                 // strip the command ID and any parameters out of the 
                 // uplinked packet as separate pieces
                 memcpy(cmd_idstr,uplink_cmd+NKEY,2);
-                memcpy(cmd_paramstr,uplink_cmd+NKEY+2,uplink_nbytes-(NKEY+2));
+                memcpy(cmd_paramstr,uplink_cmd+NKEY+2,param_nbytes);
                 cmd_id = atoi(cmd_idstr);
                 
                 // the main switch-case statement that processes commands
@@ -709,33 +731,25 @@ int main(void) {
                     case 3: // dump the contents of a named file
                         cmd_err = CmdFileDump(cmd_paramstr);
                         break;
+                    case 4: // uplink a new Two-Line Element (TLE))
+                        cmd_err = CmdNewTLE(cmd_paramstr,param_nbytes, &isNewTLE);
+                        break;
+                        
                     default:
                         sprintf(msg,"Received an invalid command ID");
                         write_string1(msg);
+                        sprintf(downlink_msg,"RamSat: %d is an invalid command ID.", cmd_id);
+                        he100_transmit_packet(he100_response, downlink_msg);
                 }
             } // good seckey
             else
             {
                 // bad or missing security key
-                sprintf(msg,"Incorrect security key in received packet");
+                sprintf(msg,"Invalid security key in received packet");
                 write_string1(msg);
+                sprintf(downlink_msg,"RamSat: Invalid security key.");
+                he100_transmit_packet(he100_response, downlink_msg);
             }
-            
-            
-            //for (i=0 ; i<100 ; i++)
-            //{
-            //    sprintf(fullpacket_msg,"packet# %03d",i);
-            //    memcpy(timing_msg, fullpacket_msg, 11);
-            //    he100_transmit_test_msg2(he100_response, timing_msg);
-            //}
-
-            //batv = eps_get_batv();
-            //he100_telem_iserror = he100_telemetry(telem_union.raw);
-            int npacketbytes = ndbytes-21;
-            memcpy(goodpacket_msg,&he100_data[16],npacketbytes);
-            //goodpacket_msg[npacketbytes] = 0;
-            //sprintf(fullpacket_msg,"RamSat: %s",goodpacket_msg);
-            //he100_transmit_test_msg2(he100_response, fullpacket_msg);
             
             // reset the UART2 receive traps
             nhbytes = 0;
@@ -743,8 +757,60 @@ int main(void) {
             ishead_flag = 0;
             isdata_flag = 0;
             he100_receive = 0;
+
             // re-enable the UART2 receive interrupt
             _U2RXIE = 1;
+        }
+        
+        // After any outstanding uplink commands have been processed,
+        // enter the main work segment of the program loop
+        
+        // If the TLE was just uplinked, initialize the SGP4 parameters
+        if (isNewTLE)
+        {
+            SGP4_init(sat_params, &tle);
+            // clear the new TLE flag, set the good TLE flag
+            isNewTLE = 0;
+            isGoodTLE = 1;            
+        }
+        
+        // If there is a good TLE, use it and RTC data to make an orbital prediction
+        if (isGoodTLE)
+        {
+            // Read the RTC and format as a julian date.
+            get_juliandate(&jd);
+            
+            // test code: downlink the retrieved julian date
+            sprintf(downlink_msg,"RamSat: Current Julian date = %.8lf",jd);
+            he100_transmit_packet(he100_response, downlink_msg);
+            
+            // Calculate the time since epoch of current TLE, in minutes.
+            t_since = (jd - tle.epoch) * 1440.;
+            
+            // call the SGP4 routine to calculate position (not calculating velocity))
+            sgp4_ret = SGP4(t_since, &tle, sat_params, pos, NULL);
+            
+            // if no error in SGP4 call, continue with orbital prediction
+            if (!sgp4_ret)
+            {
+                // estimate satellite's groundtrack longitude, latitude, and orbit elevation
+                sat_lon_lat_elev(jd, pos, &lon, &lat, &elev);
+
+                // test code: downlink the lon, lat, elev
+                sprintf(downlink_msg,"RamSat: SGP4 Coordinates: Lon = %g, Lat = %g, Elev = %g", 
+                        lon * 360.0 / (2.0*pi), lat * 360.0 / (2.0*pi), elev);
+                he100_transmit_packet(he100_response, downlink_msg);
+
+                // add the sun angle calculations here...
+                
+                // clear flag to prevent continuous downlink
+                isGoodTLE = 0;
+            }
+            else
+            {
+                sprintf(downlink_msg,"RamSat: SGP4 Error = %d",sgp4_ret);
+                he100_transmit_packet(he100_response, downlink_msg);
+            }
         }
     }
 #endif // use UART2 interrupt

@@ -11,6 +11,8 @@
 #include "sd_card.h"  // includes FError as a global mailbox for SD errors
 #include "he100.h"
 #include "hex_lut.h"
+#include "sgp4.h"
+#include "parse_tle.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -22,6 +24,9 @@
 char downlink_data[255];
 // a common array for He-100 response to transmit command
 unsigned char he100_response[8];
+
+// declare a global variable for the TLE data, defined (for now) in RamSat_flight_main.c
+extern tle_t tle;
 
 // Return the number of files on SD card
 int CmdFileCount(void)
@@ -225,4 +230,50 @@ int CmdFileDump(char *paramstr)
     SD_umount();
     free(fp1);
     return err;            
+}
+
+// Uplink a new Two-Line Element (TLE) from ground station, update current TLE
+int CmdNewTLE(char *paramstr, int param_nbytes, int *good_tle)
+{
+    int err = 0;
+    
+    // check for the right amount of data in parameter
+    if (param_nbytes != 138)
+    {
+        // clear flag and downlink error message
+        *good_tle = 0;
+        sprintf(downlink_data,"RamSat: NewTLE ERROR - Received wrong number of bytes for TLE");
+        he100_transmit_packet(he100_response, downlink_data);
+        err = 1;
+    }
+    else
+    {
+        // good size, split out the two lines
+        char line1[70]; // TLE Line 1 (first 69 characters)
+        char line2[70]; // TLE Line 2 (second 69 characters)
+        memcpy(line1,paramstr,69);
+        memcpy(line2,paramstr+69,69);
+        // line1 and line2 need to be null-terminated strings
+        line1[69]=0;
+        line2[69]=0;
+
+        // call function to parse elements from TLE
+        err = parse_elements(line1, line2, &tle);
+        if (err)
+        {
+            // clear flag and downlink error message
+            *good_tle = 0;
+            sprintf(downlink_data,"RamSat: NewTLE ERROR - parse_elements() err = %d",err);
+            he100_transmit_packet(he100_response, downlink_data);
+        }
+        else
+        {
+            // TLE parsed without error
+            // set flag and downlink sussess message
+            *good_tle = 1;
+            sprintf(downlink_data,"RamSat: NewTLE successful, TLE updated");
+            he100_transmit_packet(he100_response, downlink_data);
+        }
+    }
+    return err;
 }
