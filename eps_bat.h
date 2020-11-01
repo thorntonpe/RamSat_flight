@@ -6,6 +6,7 @@
  */
 
 unsigned char eps_get_status();
+void eps_reset_watchdog();
 float eps_get_bcr1v();
 float eps_get_bcr2v();
 float eps_get_bcr3v();

@@ -143,6 +143,19 @@ unsigned char eps_get_status()
     return response[1];
 }
 
+void eps_reset_watchdog()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x22;
+    command[1] = 0x00;
+    int delay = 1;
+    // send command
+    eps_write_command(nbytes, delay);
+    
+    // No response is generated for this command
+}
+
 float eps_get_bcr1v()
 {
     // load command and parameters

@@ -48,8 +48,18 @@
 // global variable for the current TLE
 tle_t tle;
 
-// global variables accessed by interrupt service routines
-// ISR variables for the He-100 interface on UART2
+// Global ISR variables for watchdog timer resets
+volatile int watchdog_attend = 0;
+// 32-bit timer (Timer2/3) interrupt handler, for watchdog timer resets
+void _ISR _T3Interrupt (void)
+{
+    // set flag to execute watchdog resets in main loop
+    watchdog_attend = 1;
+    // reset the interrupt flag before exit
+    _T3IF = 0;
+}
+
+// Global ISR variables for the He-100 interface on UART2
 volatile unsigned char u2rx_char;
 volatile int nhbytes = 0; // number of good header bytes already received
 volatile int ndbytes = 0; // number of data payload bytes expected
@@ -59,7 +69,6 @@ volatile int isdata_flag = 0;
 volatile int he100_receive = 0;
 volatile unsigned char he100_head[8]; // command code, payload length, and checksum bytes
 volatile unsigned char he100_data[258]; // data payload from He-100
-
 #ifdef UART2_INTERRUPT
 // test code for UART2 receive interrupt handler
 void _ISR _U2RXInterrupt (void)
@@ -232,8 +241,26 @@ int main(void) {
     double elev;        // current elevation of orbit (km)
     int sgp4_ret;       // return value for the main SGP4 call
     
+    // Initialize the PIC24 timers
     // Initialize TIMER1 (16-bit), using system clock and 1:256 prescalar
+    // This is a general purpose timer used in multiple routines for device delays
     T1CON = 0x8030;
+    
+    // Initialize TIMER2/3 (32-bit), using system clock and 1:256 prescalar
+    // also set the period register for timer 2/3 for 3,750,000 counts, which is
+    // one minute. This timer is used for watchdog resets, and has its period
+    // interrupt enabled.
+    T2CON = 0x8038;
+    PR3 = 0x0039;
+    PR2 = 0x3870;
+    // reset the timer
+    TMR3 = 0x0000;
+    TMR2 = 0x0000;
+    // set priority, clear flag, and enable the Timer2/3 interrupt
+    _T3IP = 0x01;
+    _T3IF = 0;
+    _T3IE = 1;
+    
     long wait;          // Timer trigger
     int ui;             // user input, for ground testing
     int i;
@@ -682,6 +709,21 @@ int main(void) {
     
     while (1)
     {
+        // If the watchdog attend flag is set (from Timer2/3 interrupt)
+        // cycle through each device to reset watchdog timers
+        if (watchdog_attend)
+        {
+            // Reset EPS watchdog timer
+            eps_reset_watchdog();
+            
+            // diagnostic message to UART1
+            sprintf(msg,"Watchdog reset");
+            write_string1(msg);
+            
+            // reset the attend flag
+            watchdog_attend = 0;
+        }
+        
         // test the overrun status of UART2 buffer, report and reset
         if (U2STAbits.OERR)
         {
@@ -693,7 +735,8 @@ int main(void) {
         // check for valid data receive on UART2
         if (he100_receive)
         {
-            // disable the interrupt source
+            // disable the UART2 interrupt source
+            // this prevents new uplink from interrupting the command handler
             _U2RXIE = 0;
             
             // transmit a diagnostic message
