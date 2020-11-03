@@ -48,13 +48,14 @@
 // global variable for the current TLE
 tle_t tle;
 
-// Global ISR variables for watchdog timer resets
-volatile int watchdog_attend = 0;
+// Global ISR variables for timed events
+// This flag gets set as each minute elapses
+volatile int minute_elapsed = 0;
 // 32-bit timer (Timer2/3) interrupt handler, for watchdog timer resets
 void _ISR _T3Interrupt (void)
 {
     // set flag to execute watchdog resets in main loop
-    watchdog_attend = 1;
+    minute_elapsed = 1;
     // reset the interrupt flag before exit
     _T3IF = 0;
 }
@@ -248,15 +249,15 @@ int main(void) {
     
     // Initialize TIMER2/3 (32-bit), using system clock and 1:256 prescalar
     // also set the period register for timer 2/3 for 3,750,000 counts, which is
-    // one minute. This timer is used for watchdog resets, and has its period
-    // interrupt enabled.
+    // one minute. This timer is used for watchdog resets and other periodic
+    // operations, and has its period interrupt enabled.
     T2CON = 0x8038;
     PR3 = 0x0039;
     PR2 = 0x3870;
     // reset the timer
     TMR3 = 0x0000;
     TMR2 = 0x0000;
-    // set priority, clear flag, and enable the Timer2/3 interrupt
+    // set a low priority, clear flag, and enable the Timer2/3 interrupt
     _T3IP = 0x01;
     _T3IF = 0;
     _T3IE = 1;
@@ -305,7 +306,6 @@ int main(void) {
     // Initialize the PIC24F peripherals
     init_peripherals(&init_data);
 
-
 #ifdef USB
     // enable level translation for USB I/O through U1 and U16 chips
     _TRISC1 = 0;        // Set Port C, pin 1 as output (OE-USB)
@@ -349,7 +349,10 @@ int main(void) {
 
 #ifdef TEST_ANTS
     // switch on power to the antenna (deploy and I2C)
-    unsigned char antenna_on_status = eps_antenna_on();
+    unsigned char antenna_on_status;
+    unsigned char antenna_off_status;
+    //antenna_on_status = eps_antenna_on();
+    antenna_off_status = eps_antenna_off();
 #endif
     
 #ifdef USB
@@ -557,11 +560,11 @@ int main(void) {
 
 #ifdef TEST_ANTS    
     // Simple interface test for ANTs (dual dipole antenna module)
-    write_string2("-----------------------------------");
-    write_string2("Test: ANTs interface (deployment status command)");
-    write_string2("-----------------------------------");
-    sprintf(msg,"Antenna power on status = 0x%02x",antenna_on_status);
-    write_string2(msg);
+    write_string1("-----------------------------------");
+    write_string1("Test: ANTs interface (deployment status command)");
+    write_string1("-----------------------------------");
+    sprintf(msg,"Antenna power on status = 0x%02x",antenna_off_status);
+    write_string1(msg);
     unsigned char ants_response[2];      
     
 #ifdef ANTS_DEPLOY
@@ -670,8 +673,7 @@ int main(void) {
 #endif // ANTS_DEPLOY
     
 #endif // TEST_ANTS
-
-
+    
 #ifdef UART2_INTERRUPT
     // Test the use of UART2 receive interrupt to handle incoming data packets
     
@@ -703,25 +705,57 @@ int main(void) {
         U2STAbits.OERR = 0;
     }
 
-    // clear the UART2 receive interrupt flag, and enable the interrupt source
+    // initialize the elapsed time counters for multi-level telemetry
+    int telem_level0_elapsed = 0;
+    int telem_level1_elapsed = 0;
+    int telem_level2_elapsed = 0;
+    
+    // initialize the telemetry period for each level
+    // these values correspond to the number of minutes between telemetry points 
+    int telem_level0_trigger = 1;
+    int telem_level1_trigger = 5;
+    int telem_level2_trigger = 10;
+    
+    // set a high interrupt priority for uplink, clear the UART2 receive
+    // interrupt flag, and enable the interrupt source
+    _U2RXIP = 0x07;
     _U2RXIF = 0;
     _U2RXIE = 1;
-    
+        
+    // Enter the main program loop!
     while (1)
     {
-        // If the watchdog attend flag is set (from Timer2/3 interrupt)
-        // cycle through each device to reset watchdog timers
-        if (watchdog_attend)
+        // If the 1-minute flag is set (from Timer2/3 interrupt)
+        // cycle through timed events (watchdog reset, telemetry gathering)
+        if (minute_elapsed)
         {
-            // Reset EPS watchdog timer
+            // Reset watchdog timers on each minute boundary
             eps_reset_watchdog();
-            
             // diagnostic message to UART1
             sprintf(msg,"Watchdog reset");
             write_string1(msg);
             
-            // reset the attend flag
-            watchdog_attend = 0;
+            // track elapsed time for different levels of telemetry
+            telem_level0_elapsed++;
+            telem_level1_elapsed++;
+            telem_level2_elapsed++;
+            
+            // check if any telemtry levels are triggered
+            if (telem_level0_elapsed == telem_level0_trigger)
+            {
+                // gather level-0 telemetry
+            }
+            if (telem_level1_elapsed == telem_level1_trigger)
+            {
+                // gather level-1 telemetry
+            }
+            if (telem_level2_elapsed == telem_level2_trigger)
+            {
+                // gather level-2 telemetry
+            }
+            
+            // reset the global 1-minute flag
+            minute_elapsed = 0;
         }
         
         // test the overrun status of UART2 buffer, report and reset
@@ -742,55 +776,68 @@ int main(void) {
             // transmit a diagnostic message
             sprintf(msg,"Valid packet");
             write_string1(msg);
-            sprintf(downlink_msg,"RamSat: Valid packet received, entering command interpreter.");
-            he100_transmit_packet(he100_response, downlink_msg);
             
             // parse the packet to look for a command
             // discard extra bytes at beginning and end of packet
             // calculate the length of entire uplink command, and the parameter part
             int uplink_nbytes = ndbytes - (HEAD_NBYTES+TAIL_NBYTES);
-            int param_nbytes = uplink_nbytes-(NKEY+2);
-            // copy the good part of uplink packet into local array
-            memcpy(uplink_cmd,&he100_data[HEAD_NBYTES],uplink_nbytes);
-            // check for the uplink command security key
-            if (!memcmp(uplink_cmd,seckey,NKEY))
+            // make sure the uplinked data is at least long enough for 
+            // security key and command ID before proceeding
+            if (uplink_nbytes > NKEY+1)
             {
-                // good security key, continue processing as a valid command
-                // strip the command ID and any parameters out of the 
-                // uplinked packet as separate pieces
-                memcpy(cmd_idstr,uplink_cmd+NKEY,2);
-                memcpy(cmd_paramstr,uplink_cmd+NKEY+2,param_nbytes);
-                cmd_id = atoi(cmd_idstr);
-                
-                // the main switch-case statement that processes commands
-                switch(cmd_id)
+                sprintf(downlink_msg,"RamSat: Packet received, entering command interpreter.");
+                he100_transmit_packet(he100_response, downlink_msg);
+            
+                int param_nbytes = uplink_nbytes-(NKEY+2);
+                // copy the good part of uplink packet into local array
+                memcpy(uplink_cmd,&he100_data[HEAD_NBYTES],uplink_nbytes);
+                // check for the uplink command security key
+                if (!memcmp(uplink_cmd,seckey,NKEY))
                 {
-                    case 1: // return the number of files on SD card
-                        cmd_err = CmdFileCount();
-                        break;
-                    case 2: // list details for each file on SD card
-                        cmd_err = CmdFileList();
-                        break;
-                    case 3: // dump the contents of a named file
-                        cmd_err = CmdFileDump(cmd_paramstr);
-                        break;
-                    case 4: // uplink a new Two-Line Element (TLE))
-                        cmd_err = CmdNewTLE(cmd_paramstr,param_nbytes, &isNewTLE);
-                        break;
-                        
-                    default:
-                        sprintf(msg,"Received an invalid command ID");
-                        write_string1(msg);
-                        sprintf(downlink_msg,"RamSat: %d is an invalid command ID.", cmd_id);
-                        he100_transmit_packet(he100_response, downlink_msg);
+                    // good security key, continue processing as a valid command
+                    // strip the command ID and any parameters out of the 
+                    // uplinked packet as separate pieces
+                    memcpy(cmd_idstr,uplink_cmd+NKEY,2);
+                    memcpy(cmd_paramstr,uplink_cmd+NKEY+2,param_nbytes);
+                    cmd_id = atoi(cmd_idstr);
+
+                    // the main switch-case statement that processes commands
+                    switch(cmd_id)
+                    {
+                        case 1: // return the number of files on SD card
+                            cmd_err = CmdFileCount();
+                            break;
+                        case 2: // list details for each file on SD card
+                            cmd_err = CmdFileList();
+                            break;
+                        case 3: // dump the contents of a named file
+                            cmd_err = CmdFileDump(cmd_paramstr);
+                            break;
+                        case 4: // uplink a new Two-Line Element (TLE))
+                            cmd_err = CmdNewTLE(cmd_paramstr,param_nbytes, &isNewTLE);
+                            break;
+
+                        default:
+                            sprintf(msg,"Received an invalid command ID");
+                            write_string1(msg);
+                            sprintf(downlink_msg,"RamSat: %d is an invalid command ID.", cmd_id);
+                            he100_transmit_packet(he100_response, downlink_msg);
+                    }
+                } // good seckey
+                else
+                {
+                    // bad or missing security key
+                    sprintf(msg,"Invalid security key in received packet");
+                    write_string1(msg);
+                    sprintf(downlink_msg,"RamSat: Invalid security key.");
+                    he100_transmit_packet(he100_response, downlink_msg);
                 }
-            } // good seckey
+            } // meets minimum packet length for valid command
             else
             {
-                // bad or missing security key
-                sprintf(msg,"Invalid security key in received packet");
+                sprintf(msg,"Packet too short");
                 write_string1(msg);
-                sprintf(downlink_msg,"RamSat: Invalid security key.");
+                sprintf(downlink_msg,"RamSat: ERROR - received packet too short.");
                 he100_transmit_packet(he100_response, downlink_msg);
             }
             
@@ -824,9 +871,11 @@ int main(void) {
             get_juliandate(&jd);
             
             // test code: downlink the retrieved julian date
+            _U2RXIE = 0;
             sprintf(downlink_msg,"RamSat: Current Julian date = %.8lf",jd);
             he100_transmit_packet(he100_response, downlink_msg);
-            
+            _U2RXIE = 1;
+
             // Calculate the time since epoch of current TLE, in minutes.
             t_since = (jd - tle.epoch) * 1440.;
             
@@ -840,10 +889,12 @@ int main(void) {
                 sat_lon_lat_elev(jd, pos, &lon, &lat, &elev);
 
                 // test code: downlink the lon, lat, elev
+                _U2RXIE = 0;
                 sprintf(downlink_msg,"RamSat: SGP4 Coordinates: Lon = %g, Lat = %g, Elev = %g", 
                         lon * 360.0 / (2.0*pi), lat * 360.0 / (2.0*pi), elev);
                 he100_transmit_packet(he100_response, downlink_msg);
-
+                _U2RXIE = 1;
+                
                 // add the sun angle calculations here...
                 
                 // clear flag to prevent continuous downlink

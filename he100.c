@@ -265,6 +265,9 @@ void he100_transmit_packet(unsigned char* response, char* data)
     unsigned char buf[250];
     unsigned char data_len;
     int packet_len;
+    char msg[128];      // character string for messages to user via COM port
+    char test;
+    
     
     // length of test message
     data_len = (unsigned char)strlen(data);

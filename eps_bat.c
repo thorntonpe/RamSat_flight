@@ -558,9 +558,9 @@ unsigned char eps_antenna_on()
     // send command
     eps_write_command(nbytes, delay);
     // read response
-    eps_read_response(2);
+    //eps_read_response(2);
     // the useful status byte is the second byte returned
-    return response[1];    
+    return 0x01;    
 }
 
 // Turn off PDM Switch #8, 3.3V power to Antenna
@@ -573,10 +573,14 @@ unsigned char eps_antenna_off()
     int delay = 1;
     // send command
     eps_write_command(nbytes, delay);
+    // temp code to turn off the switch #10 on H2.20
+    command[1] = 0x0a;
+    // send command
+    eps_write_command(nbytes, delay);
     // read response
-    eps_read_response(2);
+    //eps_read_response(2);
     // the useful status byte is the second byte returned
-    return response[1];    
+    return 0x01;    
 }
 
 // battery telemetry: status byte
