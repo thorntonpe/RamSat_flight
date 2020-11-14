@@ -5,6 +5,7 @@
  * Created on: 13 May 2020
  */
 
+int sfm_read_1byte(int adr1, int adr2, int adr3);
+void sfm_write_1byte(int adr1, int adr2, int adr3, int data);
 int test_sfm(void);
 void clear_pdt_flag(void);
-int wait_pdt(unsigned int n_secs, int *out_flag);

@@ -44,6 +44,73 @@ int ReadSR( void)
     return srbyte1;
 }
 
+int sfm_read_1byte(int adr1, int adr2, int adr3)
+{
+    // adr1, adr2, adr3 are the 24-bit address for the byte to read
+    int read_data;
+    
+    CS_SFM = 0;                    // select SFM
+    write_spi3(SFM_READ);
+    write_spi3(adr1);
+    write_spi3(adr2);
+    write_spi3(adr3);
+    read_data = write_spi3(0);
+    CS_SFM = 1;                    // deselect SFM
+    
+    return read_data;
+}
+
+void sfm_write_1byte(int adr1, int adr2, int adr3, int data)
+{
+    // adr1, adr2, adr3 are the 24-bit address for the byte to write
+    // and data is the value to write
+    
+    // write enable to change write protection
+    CS_SFM = 0;             // select the SFM
+    write_spi3(SFM_WEN);    // send write enable command
+    CS_SFM = 1;               // deselect, terminate command
+    // turn off the write protect flag for sector    
+    CS_SFM = 0;
+    write_spi3(SFM_SECTUNP);
+    write_spi3(adr1);
+    write_spi3(adr2);
+    write_spi3(adr3);
+    CS_SFM = 1;
+    // wait for the unprotect operation to complete by monitoring bit 0 of the SR
+    while (ReadSR() & 0x1);
+    
+    // Erase the designated 4 KByte block (must be erased before writing)
+    // send write-enable command
+    CS_SFM = 0;
+    write_spi3(SFM_WEN);
+    CS_SFM = 1;
+    // send block erase command
+    CS_SFM = 0;
+    write_spi3(SFM_ER4K);
+    write_spi3(adr1);
+    write_spi3(adr2);
+    write_spi3(adr3);
+    CS_SFM = 1;
+    // wait for the erase operation to complete by monitoring bit 0 of the SR
+    while (ReadSR() & 0x1);
+    
+    // write the data value to SFM
+    // send the write enable command
+    CS_SFM = 0;
+    write_spi3(SFM_WEN);
+    CS_SFM = 1;
+    // send the write command, address, and data
+    CS_SFM = 0;
+    write_spi3(SFM_WRITE);
+    write_spi3(adr1);
+    write_spi3(adr2);
+    write_spi3(adr3);
+    write_spi3(data);
+    CS_SFM = 1;
+    // wait for the write operation to complete by monitoring bit 0 of the SR
+    while (ReadSR() & 0x1);
+}
+
 int test_sfm(void) 
 {
     // do a test write and read operation to the SFM
@@ -180,87 +247,3 @@ void clear_pdt_flag(void)
     while (ReadSR() & 0x1);
 }
 
-int wait_pdt(unsigned int n_secs, int *out_flag)
-{
-    int status;
-    unsigned int counts_per_sec = 1000 * TMR1MSEC;
-    unsigned int seconds_waited = 0;
-    
-    // read the post-deploy timer flag from SFM
-    // Read back these bytes of data
-    int pdt_flag = 0;
-    CS_SFM = 0;
-    write_spi3(SFM_READ);
-    write_spi3(PDT_ADDR1);
-    write_spi3(PDT_ADDR2);
-    write_spi3(PDT_ADDR3);
-    pdt_flag = write_spi3(0);
-    CS_SFM = 1;
-    
-    switch(pdt_flag)
-    {
-        case MUST_WAIT:  
-            // pft wait period has not been satisfied, 
-            // so wait the requred number of seconds
-            while (seconds_waited < n_secs)
-            {
-                TMR1 = 0;
-                while(TMR1 < counts_per_sec);
-                seconds_waited++;
-            }
-            // turn off the write protect flag for sector
-            CS_SFM = 0;             // select the SFM
-            write_spi3(SFM_WEN);    // send write enable command
-            CS_SFM = 1;               // deselect, terminate command
-            // send sector unprotect command
-            CS_SFM = 0;
-            write_spi3(SFM_SECTUNP);
-            write_spi3(PDT_ADDR1);
-            write_spi3(PDT_ADDR2);
-            write_spi3(PDT_ADDR3);
-            CS_SFM = 1;
-            // wait for the unprotect operation to complete by monitoring bit 0 of the SR
-            while (ReadSR() & 0x1);
-            // Erase the designated 4 KByte block (must be erased before writing)
-            // send write-enable command
-            CS_SFM = 0;
-            write_spi3(SFM_WEN);
-            CS_SFM = 1;
-            // send block erase command
-            CS_SFM = 0;
-            write_spi3(SFM_ER4K);
-            write_spi3(PDT_ADDR1);
-            write_spi3(PDT_ADDR2);
-            write_spi3(PDT_ADDR3);
-            CS_SFM = 1;
-            // wait for the erase operation to complete by monitoring bit 0 of the SR
-            while (ReadSR() & 0x1);
-            // write the DONT_WAIT flag to SFM, to prevent wait on next restart
-            // send the write enable command
-            CS_SFM = 0;
-            write_spi3(SFM_WEN);
-            CS_SFM = 1;
-            // send the write command, address, and data
-            CS_SFM = 0;
-            write_spi3(SFM_WRITE);
-            write_spi3(PDT_ADDR1);
-            write_spi3(PDT_ADDR2);
-            write_spi3(PDT_ADDR3);
-            write_spi3(DONT_WAIT);
-            CS_SFM = 1;
-            // wait for the write operation to complete by monitoring bit 0 of the SR
-            while (ReadSR() & 0x1);
-            status = 1;  // return status: waited
-            break;
-            
-        case DONT_WAIT:
-            status = 0;  // return status: didn't wait
-            break;
-            
-        default:
-            status = 2;  // return status: unrecognized pdt_flag value
-    } // end switch on pdt_flag
-    
-    *out_flag = pdt_flag;
-    return status;
-}

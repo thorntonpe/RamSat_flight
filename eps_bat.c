@@ -227,7 +227,7 @@ float eps_get_bcroutv()
     return (float)adc * 0.009009009 - 0.005405405;
 }
 
-float eps_get_batv()
+float eps_get_batv(int *adc)
 {
     // load command and parameters
     int nbytes = 3;
@@ -240,8 +240,8 @@ float eps_get_batv()
     // read response
     eps_read_response(2);
     // convert 2-byte (10-bit) ADC output to float (V)
-    int adc = (response[0] << 8) | response[1];
-    return (float)adc * 0.009237022 - 0.225405738;
+    *adc = (response[0] << 8) | response[1];
+    return (float)*adc * 0.009237022 - 0.225405738;
 }
 
 float eps_get_bus12v()

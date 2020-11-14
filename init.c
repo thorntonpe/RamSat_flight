@@ -16,7 +16,16 @@
 #include "sd_test.h"
 #include "rtc_user.h"
 #include "datetime.h"
+#include "eps_bat.h"
 #include "init.h"
+
+// address and flag values for the post-deployment timer
+#define PDT_NMIN 10        // Number of minutes to wait after deployment
+#define PDT_ADR1 0x00      // Address on SFM for post-deploy timer flag:
+#define PDT_ADR2 0x10      // (00, 10, 00) is at the start of the second
+#define PDT_ADR3 0x00      // 4k block in sector 1.
+#define MUST_WAIT 0x55     // Flag value: Post-deploy timer has not yet completed
+#define DONT_WAIT 0xaa     // Flag value: Post-deploy timer has already completed
 
 void init_peripherals(init_data_type *init_data_p)
 {
@@ -77,7 +86,45 @@ void init_motherboard_components(init_data_type *init_data_p)
 // the MUST_WAIT flag is set in serial flash memory. 
 void init_wait(init_data_type *init_data_p)
 {
-    int wait_nsecs = 10;
+    int minutes_elapsed = 0;
+    unsigned int counts_per_sec = 1000 * TMR1MSEC;
+    unsigned int seconds_elapsed;
     
-    init_data_p->pdt_status = wait_pdt(wait_nsecs, &(init_data_p->pdt_flag));
+    // read the post-deployment timer wait flag from SFM
+    init_data_p->pdt_flag = sfm_read_1byte(PDT_ADR1, PDT_ADR2, PDT_ADR3);
+    
+    if (init_data_p->pdt_flag == MUST_WAIT)
+    {
+        // begin post-deploy wait loop
+        // wait in one-minute increments with EPS WDT reset each minute
+        while (minutes_elapsed < PDT_NMIN)
+        {
+            // reset the seconds counter
+            seconds_elapsed = 0;
+            while (seconds_elapsed < 60)
+            {
+                TMR1 = 0;
+                while(TMR1 < counts_per_sec);
+                seconds_elapsed++;
+            }
+            minutes_elapsed++;
+            // Reset EPS watchdog timer on each minute boundary
+            eps_reset_watchdog();
+        }
+        // Completed the required PDT wait period, so write DONT_WAIT flag to SFM.
+        // This allows code to skip the PDT wait period on any subsequent resets.
+        sfm_write_1byte(PDT_ADR1, PDT_ADR2, PDT_ADR3, DONT_WAIT);
+        // set status to indicate wait
+        init_data_p->pdt_status = 1;
+    }
+    else if (init_data_p->pdt_flag == DONT_WAIT)
+    {
+        // set status to indicate didn't wait
+        init_data_p->pdt_status = 0;
+    }
+    else
+    {
+        // set status to indicate unrecognized PDT flag value read from SFM
+        init_data_p->pdt_status = 2;
+    }
 }

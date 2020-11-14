@@ -11,7 +11,7 @@ float eps_get_bcr1v();
 float eps_get_bcr2v();
 float eps_get_bcr3v();
 float eps_get_bcroutv();
-float eps_get_batv();
+float eps_get_batv(int *adc);
 float eps_get_bus12v();
 float eps_get_bus5v();
 float eps_get_bus33v();

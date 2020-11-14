@@ -32,7 +32,7 @@
 // Configuration for ground testing and flight configurations
 // Input/Output configuration: Define USB or HE100, but not both
 //#define USB      // Enable USB I/O (ground testing only)
-#define RS232      // enable the RS232 serial interface
+//#define RS232      // enable the RS232 serial interface
 #define HE100    // Enable He-100 transceiver I/O (ground testing or flight)
 
 //#define INIT_RTC   // Pre-flight code to initialize RTC
@@ -42,7 +42,7 @@
 //#define TEST_ANTS
 //#define ANTS_DEPLOY  // just the arm/disarm steps
 //#define ANTS_DEPLOY2 // include the actual deployment steps
-#define BAT_TELEM  // include outputs for battery telemetry on RS232
+//#define BAT_TELEM  // include outputs for battery telemetry on RS232
 #define UART2_INTERRUPT  // test the use of interrupt handler for incoming UART data
 
 // global variable for the current TLE
@@ -323,6 +323,7 @@ int main(void) {
     init_motherboard_components(&init_data);    
 
     // perform the initial deployment test, and wait if the MUST_WAIT flag is set
+    // includes resets for the EPS WDT during post-deploy wait period
     init_wait(&init_data);
 
 #ifdef INIT_RTC
@@ -438,10 +439,12 @@ int main(void) {
     sprintf(msg,"ADC: AN15 = %d",ADC1BUF6);
     write_string2(msg);
 #endif
-
+    
+    
 #ifdef RS232
 #ifdef BAT_TELEM
     // test EPS and battery telemetry
+    int adc;  // raw telemetry output
     write_string1("-----------------------------------");
     write_string1("Test: EPS / Battery Telemetry");
     write_string1("-----------------------------------");
@@ -452,7 +455,7 @@ int main(void) {
     unsigned char bat_status = bat_get_status();
     sprintf(msg,"Bat status byte = 0x%02x", bat_status);
     write_string1(msg);
-    float batv = eps_get_batv();
+    float batv = eps_get_batv(&adc);
     sprintf(msg,"Battery voltage = %.2f",batv);
     write_string1(msg);
     float bcr1v = eps_get_bcr1v();
@@ -688,10 +691,12 @@ int main(void) {
     char downlink_msg[255]; // Response/message to be downlinked by RamSat
 
     // Retrieve battery telemetry for startup message
-    batv = eps_get_batv();
+    int adc;  // raw telemetry output
+    float batv = eps_get_batv(&adc);
     
     // Retrieve He-100 telemetry for startup message
-    he100_telem_iserror = he100_telemetry(telem_union.raw);
+    union he100_telem_union telem_union;
+    int he100_telem_iserror = he100_telemetry(telem_union.raw);
     
     // Downlink the startup message
     sprintf(downlink_msg,"RamSat: Startup BatV = %.2f, RSSI = %d",batv,telem_union.telem.rssi);
@@ -716,6 +721,14 @@ int main(void) {
     int telem_level1_trigger = 5;
     int telem_level2_trigger = 10;
     
+    // initialize counters for number of telemetry points gathered since last SFM write
+    int telem_count0 = 0;
+    int telem_count1 = 0;
+    int telem_count2 = 0;
+    
+    // initialize telemetry output arrays
+    char telem_out0[128];
+    
     // set a high interrupt priority for uplink, clear the UART2 receive
     // interrupt flag, and enable the interrupt source
     _U2RXIP = 0x07;
@@ -733,7 +746,7 @@ int main(void) {
             eps_reset_watchdog();
             // diagnostic message to UART1
             sprintf(msg,"Watchdog reset");
-            write_string1(msg);
+            //write_string1(msg);
             
             // track elapsed time for different levels of telemetry
             telem_level0_elapsed++;
@@ -744,6 +757,11 @@ int main(void) {
             if (telem_level0_elapsed == telem_level0_trigger)
             {
                 // gather level-0 telemetry
+                //telem_get0(telem_count0, telem_out0);
+                //write_string1(telem_out0);
+                // increment record counter and reset elapsed counter
+                telem_count0++;
+                telem_level0_elapsed = 0;
             }
             if (telem_level1_elapsed == telem_level1_trigger)
             {
@@ -775,7 +793,7 @@ int main(void) {
             
             // transmit a diagnostic message
             sprintf(msg,"Valid packet");
-            write_string1(msg);
+            //write_string1(msg);
             
             // parse the packet to look for a command
             // discard extra bytes at beginning and end of packet
@@ -819,7 +837,7 @@ int main(void) {
 
                         default:
                             sprintf(msg,"Received an invalid command ID");
-                            write_string1(msg);
+                            //write_string1(msg);
                             sprintf(downlink_msg,"RamSat: %d is an invalid command ID.", cmd_id);
                             he100_transmit_packet(he100_response, downlink_msg);
                     }
@@ -828,7 +846,7 @@ int main(void) {
                 {
                     // bad or missing security key
                     sprintf(msg,"Invalid security key in received packet");
-                    write_string1(msg);
+                    //write_string1(msg);
                     sprintf(downlink_msg,"RamSat: Invalid security key.");
                     he100_transmit_packet(he100_response, downlink_msg);
                 }
@@ -836,7 +854,7 @@ int main(void) {
             else
             {
                 sprintf(msg,"Packet too short");
-                write_string1(msg);
+                //write_string1(msg);
                 sprintf(downlink_msg,"RamSat: ERROR - received packet too short.");
                 he100_transmit_packet(he100_response, downlink_msg);
             }
