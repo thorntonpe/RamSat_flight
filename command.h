@@ -10,6 +10,10 @@ int CmdFileCount(void);
 int CmdFileList(void);
 int CmdFileDump(char *paramstr);
 int CmdNewTLE(char *paramstr, int param_nbytes, int *good_tle);
+int CmdGetDateTime(void);
+int CmdSetDateTime(char* paramstr, int param_nbytes);
+void CmdSetPDT(void);
+void CmdReset(void);
 
 
 

@@ -182,4 +182,3 @@ int get_juliandate(double *jdate)
     }
     return err;
 }
-

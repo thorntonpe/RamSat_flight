@@ -13,6 +13,11 @@
 #include "hex_lut.h"
 #include "sgp4.h"
 #include "parse_tle.h"
+#include "datetime.h"
+#include "sfm.h"
+#include "pdt.h"
+#include "rtc.h"
+#include "rtc_user.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -27,6 +32,13 @@ unsigned char he100_response[8];
 
 // declare a global variable for the TLE data, defined (for now) in RamSat_flight_main.c
 extern tle_t tle;
+
+// A No-Op command to verify 2-way radio connection
+void CmdNoOp(void)
+{
+    sprintf(downlink_data,"RamSat: No-Op command acknowledged.");
+    he100_transmit_packet(he100_response, downlink_data);
+}
 
 // Return the number of files on SD card
 int CmdFileCount(void)
@@ -242,7 +254,7 @@ int CmdNewTLE(char *paramstr, int param_nbytes, int *good_tle)
     {
         // clear flag and downlink error message
         *good_tle = 0;
-        sprintf(downlink_data,"RamSat: NewTLE ERROR - Received wrong number of bytes for TLE");
+        sprintf(downlink_data,"RamSat: NewTLE ERROR - Received %d bytes, expecting 138", param_nbytes);
         he100_transmit_packet(he100_response, downlink_data);
         err = 1;
     }
@@ -269,11 +281,159 @@ int CmdNewTLE(char *paramstr, int param_nbytes, int *good_tle)
         else
         {
             // TLE parsed without error
-            // set flag and downlink sussess message
+            // set flag and downlink success message
             *good_tle = 1;
             sprintf(downlink_data,"RamSat: NewTLE successful, TLE updated");
             he100_transmit_packet(he100_response, downlink_data);
         }
     }
     return err;
+}
+
+// return the current date and time from RTC
+int CmdGetDateTime(void)
+{
+    char datetime[128];
+    int err = 0;
+    
+    err = get_isodatetime(datetime);
+    sprintf(downlink_data,"RamSat: ISO DateTime = %s",datetime);
+    he100_transmit_packet(he100_response, downlink_data);
+    return err;
+}
+
+// set the date and time on RTC
+int CmdSetDateTime(char* paramstr, int param_nbytes)
+{
+    int err = 0;
+    int rtc_flags;
+    int nbytes;
+    unsigned char rtc_data[8];
+    unsigned char firstbyte;
+    char numstr[3];
+    int num;
+    
+    // null-terminated string to hold two-digit int
+    numstr[2]=0;
+    
+    // check for the right amount of data in parameter
+    if (param_nbytes != 24)
+    {
+        // clear flag and downlink error message
+        sprintf(downlink_data,"RamSat: Set Date/Time Error - Received %d bytes, expecting 24.",param_nbytes);
+        he100_transmit_packet(he100_response, downlink_data);
+        err = 1;
+    }
+    else if (paramstr[10] != 'T' || paramstr[22] != 'Z')
+    {
+        // basic format check fails
+        sprintf(downlink_data,"RamSat: Set Date/Time Error - incorrect format");
+        he100_transmit_packet(he100_response, downlink_data);
+        err = 1;
+    }
+    else
+    {
+        // good size and format, split out the elements needed to set RTC
+        firstbyte = 0x00;
+        nbytes = 8;
+        
+        // hundredths of seconds (00-99)
+        numstr[0]=paramstr[20];
+        numstr[1]=paramstr[21];
+        num=atoi(numstr);
+        rtc_data[0]=num;
+        
+        // seconds (0-59)  
+        numstr[0]=paramstr[17];
+        numstr[1]=paramstr[18];
+        num=atoi(numstr);
+        rtc_data[1]=num;
+        
+        // minutes (0-59)
+        numstr[0]=paramstr[14];
+        numstr[1]=paramstr[15];
+        num=atoi(numstr);
+        rtc_data[2]=num;
+        
+        // hour (00-23)
+        numstr[0]=paramstr[11];
+        numstr[1]=paramstr[12];
+        num=atoi(numstr);
+        rtc_data[3]=num;
+        
+        // day of week (1-7)
+        numstr[0]='0';
+        numstr[1]=paramstr[23];
+        num=atoi(numstr);
+        rtc_data[4]=num;
+        
+        // day of month (1-31)
+        numstr[0]=paramstr[8];
+        numstr[1]=paramstr[9];
+        num=atoi(numstr);
+        rtc_data[5]=num;
+        
+        // month (1-12)
+        numstr[0]=paramstr[5];
+        numstr[1]=paramstr[6];
+        num=atoi(numstr);
+        rtc_data[6]=num;
+        
+        // year (00-99) e.g. "20" for 2020
+        numstr[0]=paramstr[2];
+        numstr[1]=paramstr[3];
+        num=atoi(numstr);
+        rtc_data[7]=num;
+        
+        // Make sure the HALT, STOP, and OF bits are clear before setting RTC
+        // read flags first
+        err = rtc_read_flags(&rtc_flags);
+        if (err)
+        {
+            // problem reading flags from RTC
+            sprintf(downlink_data,"RamSat: Set Date/Time Error - RTC flag read error");
+            he100_transmit_packet(he100_response, downlink_data);
+        }
+        else
+        {
+            // clear any flags that are set
+            err = rtc_clear_flags(rtc_flags);
+            if (err)
+            {
+                // problem cldearing RTC flags
+                sprintf(downlink_data,"RamSat: Set Date/Time Error - RTC flag clearing error");
+                he100_transmit_packet(he100_response, downlink_data);
+            }
+            else
+            {
+                // write the RTC data to device, acknowledge wia downlink
+                rtc_write_nbytes(nbytes, firstbyte, rtc_data);
+                sprintf(downlink_data,"RamSat: Set Date/Time completed. Reporting current date/time...");
+                he100_transmit_packet(he100_response, downlink_data);
+                err = CmdGetDateTime();
+                
+            }
+        }
+    }
+    return err;
+}
+
+// Set the MUST_WAIT flag for post-deployment timer, in SFM
+void CmdSetPDT(void)
+{
+    // set flag that forces code to wait on reset
+    sfm_write_1byte(PDT_ADR1, PDT_ADR2, PDT_ADR3, MUST_WAIT);
+
+    // downlink status message
+    sprintf(downlink_data,"RamSat: MUST_WAIT flag for post-deployment timer is set.");
+    he100_transmit_packet(he100_response, downlink_data);
+}
+
+// Reset the flight computer. Try to resolve stuck code or frozen peripherals.
+void CmdReset(void)
+{
+    sprintf(downlink_data,"RamSat: Attempting flight computer RESET...");
+    he100_transmit_packet(he100_response, downlink_data);
+
+    exit(0);
 }

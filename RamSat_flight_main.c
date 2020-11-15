@@ -742,11 +742,16 @@ int main(void) {
         // cycle through timed events (watchdog reset, telemetry gathering)
         if (minute_elapsed)
         {
+            // disable the UART2 interrupt source
+            // this prevents new uplink from interrupting the WDT reset and downlink
+            _U2RXIE = 0;
             // Reset watchdog timers on each minute boundary
             eps_reset_watchdog();
-            // diagnostic message to UART1
-            sprintf(msg,"Watchdog reset");
-            //write_string1(msg);
+            // diagnostic message to ground station
+            sprintf(downlink_msg,"RamSat: EPS watchdog timer reset");
+            he100_transmit_packet(he100_response, downlink_msg);
+            // enable the UART2 interrupt source
+            _U2RXIE = 1;
             
             // track elapsed time for different levels of telemetry
             telem_level0_elapsed++;
@@ -766,10 +771,12 @@ int main(void) {
             if (telem_level1_elapsed == telem_level1_trigger)
             {
                 // gather level-1 telemetry
+                telem_level1_elapsed = 0;
             }
             if (telem_level2_elapsed == telem_level2_trigger)
             {
                 // gather level-2 telemetry
+                telem_level2_elapsed = 0;
             }
             
             // reset the global 1-minute flag
@@ -822,6 +829,9 @@ int main(void) {
                     // the main switch-case statement that processes commands
                     switch(cmd_id)
                     {
+                        case 0: // No-Op command - just send acknowledgment message 
+                            CmdNoOp();
+                            break;
                         case 1: // return the number of files on SD card
                             cmd_err = CmdFileCount();
                             break;
@@ -831,8 +841,20 @@ int main(void) {
                         case 3: // dump the contents of a named file
                             cmd_err = CmdFileDump(cmd_paramstr);
                             break;
-                        case 4: // uplink a new Two-Line Element (TLE))
+                        case 4: // uplink a new Two-Line Element (TLE)
                             cmd_err = CmdNewTLE(cmd_paramstr,param_nbytes, &isNewTLE);
+                            break;
+                        case 5: // return the current date and time from RTC
+                            cmd_err = CmdGetDateTime();
+                            break;
+                        case 6: // Set the date and time on RTC
+                            cmd_err = CmdSetDateTime(cmd_paramstr, param_nbytes);
+                            break;
+                        case 90: // Set post-deployment timer flag (pre-flight)
+                            CmdSetPDT();
+                            break;
+                        case 99: // Reset the flight computer
+                            CmdReset();
                             break;
 
                         default:
