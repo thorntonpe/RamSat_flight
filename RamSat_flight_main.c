@@ -269,7 +269,7 @@ int main(void) {
     
     // Set desired baud rates for UART2 (He-100 radio or USB interfaces)
 #ifdef HE100
-    init_data.u2br_request = 9600;   // UART2 desired baud rate for radio
+    init_data.u2br_request = 115200;   // UART2 desired baud rate for radio
     unsigned char he100_response[8];
     unsigned char he100_telem[26];
 #endif
@@ -684,7 +684,7 @@ int main(void) {
     char uplink_cmd[255];   // holds the latest uplinked command and parameters
     char cmd_idstr[3];      // null-terminated string for the command ID
     cmd_idstr[2]=0;         // null termination
-    char cmd_paramstr[255]; // parameters passed in uplink command
+    char cmd_paramstr[257]; // parameters passed in uplink command
     int cmd_id;             // integer value for command ID
     int cmd_err;            // return value for command handlers
     
@@ -824,6 +824,9 @@ int main(void) {
                     // uplinked packet as separate pieces
                     memcpy(cmd_idstr,uplink_cmd+NKEY,2);
                     memcpy(cmd_paramstr,uplink_cmd+NKEY+2,param_nbytes);
+                    // make cmd_paramstr a null-terminated string
+                    cmd_paramstr[param_nbytes]=0;
+                    // make the command ID a number for case statement
                     cmd_id = atoi(cmd_idstr);
 
                     // the main switch-case statement that processes commands
@@ -849,6 +852,12 @@ int main(void) {
                             break;
                         case 6: // Set the date and time on RTC
                             cmd_err = CmdSetDateTime(cmd_paramstr, param_nbytes);
+                            break;
+                        case 7: // Erase one 64KB sector on the SFM
+                            cmd_err = CmdEraseSector(cmd_paramstr);
+                            break;
+                        case 8: // Write one page within one sector on the SFM
+                            cmd_err = CmdWritePage(cmd_paramstr);
                             break;
                         case 90: // Set post-deployment timer flag (pre-flight)
                             CmdSetPDT();

@@ -111,6 +111,67 @@ void sfm_write_1byte(int adr1, int adr2, int adr3, int data)
     while (ReadSR() & 0x1);
 }
 
+void sfm_erase_64k(int sector)
+{
+    // sector is the sector number (0-127) to be erased
+    // device addressing is 24-bit, so the 64k sector number translates 
+    // to the MSB, with the other two bytes being 0.
+    // write enable to change write protection
+    CS_SFM = 0;             // select the SFM
+    write_spi3(SFM_WEN);    // send write enable command
+    CS_SFM = 1;               // deselect, terminate command
+    // turn off the write protect flag for sector    
+    CS_SFM = 0;
+    write_spi3(SFM_SECTUNP);
+    write_spi3(sector);
+    write_spi3(0);
+    write_spi3(0);
+    CS_SFM = 1;
+    // wait for the unprotect operation to complete by monitoring bit 0 of the SR
+    while (ReadSR() & 0x1);
+    
+    // Erase the designated 64 KByte sector (must be erased before writing)
+    // send write-enable command
+    CS_SFM = 0;
+    write_spi3(SFM_WEN);
+    CS_SFM = 1;
+    // send sector erase command
+    CS_SFM = 0;
+    write_spi3(SFM_ER64K);
+    write_spi3(sector);
+    write_spi3(0);
+    write_spi3(0);
+    CS_SFM = 1;
+    // wait for the erase operation to complete by monitoring bit 0 of the SR
+    while (ReadSR() & 0x1);
+}
+
+void sfm_write_page(int sector, int page, int* data)
+{
+    int i;
+    // assumes that data is a 256-byte long array
+    // and that the given page on the given secotr is previously erased and ready to write.
+    // write the data value to SFM
+    // send the write enable command
+    CS_SFM = 0;
+    write_spi3(SFM_WEN);
+    CS_SFM = 1;
+    // send the write command, address, and data
+    CS_SFM = 0;
+    write_spi3(SFM_WRITE);
+    write_spi3(sector);
+    write_spi3(page);
+    write_spi3(0);
+    // loop through data array and write all bytes
+    for (i=0 ; i<256 ; i++)
+    {
+        write_spi3(*data++);
+    }
+    CS_SFM = 1;
+    // wait for the write operation to complete by monitoring bit 0 of the SR
+    while (ReadSR() & 0x1);
+}
+
 int test_sfm(void) 
 {
     // do a test write and read operation to the SFM

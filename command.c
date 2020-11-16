@@ -311,7 +311,7 @@ int CmdSetDateTime(char* paramstr, int param_nbytes)
     unsigned char rtc_data[8];
     unsigned char firstbyte;
     char numstr[3];
-    int num;
+    int num1, num10;
     
     // null-terminated string to hold two-digit int
     numstr[2]=0;
@@ -334,56 +334,51 @@ int CmdSetDateTime(char* paramstr, int param_nbytes)
     else
     {
         // good size and format, split out the elements needed to set RTC
+        // Note that the rtc_data values are decimal-coded binary, which is
+        // why there are funny-looking translations between the input date/time 
+        // values and the values sent to RTC.
         firstbyte = 0x00;
         nbytes = 8;
         
         // hundredths of seconds (00-99)
-        numstr[0]=paramstr[20];
-        numstr[1]=paramstr[21];
-        num=atoi(numstr);
-        rtc_data[0]=num;
+        num10=paramstr[20]-48;
+        num1 =paramstr[21]-48;
+        rtc_data[0]=num10*16+num1;
         
         // seconds (0-59)  
-        numstr[0]=paramstr[17];
-        numstr[1]=paramstr[18];
-        num=atoi(numstr);
-        rtc_data[1]=num;
+        num10=paramstr[17]-48;
+        num1 =paramstr[18]-48;
+        rtc_data[1]=num10*16+num1;
         
         // minutes (0-59)
-        numstr[0]=paramstr[14];
-        numstr[1]=paramstr[15];
-        num=atoi(numstr);
-        rtc_data[2]=num;
+        num10=paramstr[14]-48;
+        num1 =paramstr[15]-48;
+        rtc_data[2]=num10*16+num1;
         
         // hour (00-23)
-        numstr[0]=paramstr[11];
-        numstr[1]=paramstr[12];
-        num=atoi(numstr);
-        rtc_data[3]=num;
+        num10=paramstr[11]-48;
+        num1 =paramstr[12]-48;
+        rtc_data[3]=num10*16+num1;
         
         // day of week (1-7)
-        numstr[0]='0';
-        numstr[1]=paramstr[23];
-        num=atoi(numstr);
-        rtc_data[4]=num;
+        num10=0;
+        num1 =paramstr[23]-48;
+        rtc_data[4]=num10*16+num1;
         
         // day of month (1-31)
-        numstr[0]=paramstr[8];
-        numstr[1]=paramstr[9];
-        num=atoi(numstr);
-        rtc_data[5]=num;
+        num10=paramstr[8]-48;
+        num1 =paramstr[9]-48;
+        rtc_data[5]=num10*16+num1;
         
         // month (1-12)
-        numstr[0]=paramstr[5];
-        numstr[1]=paramstr[6];
-        num=atoi(numstr);
-        rtc_data[6]=num;
+        num10=paramstr[5]-48;
+        num1 =paramstr[6]-48;
+        rtc_data[6]=num10*16+num1;
         
         // year (00-99) e.g. "20" for 2020
-        numstr[0]=paramstr[2];
-        numstr[1]=paramstr[3];
-        num=atoi(numstr);
-        rtc_data[7]=num;
+        num10=paramstr[2]-48;
+        num1 =paramstr[3]-48;
+        rtc_data[7]=num10*16+num1;
         
         // Make sure the HALT, STOP, and OF bits are clear before setting RTC
         // read flags first
@@ -414,6 +409,55 @@ int CmdSetDateTime(char* paramstr, int param_nbytes)
                 
             }
         }
+    }
+    return err;
+}
+
+// Erase specified 64KB sector on Serial Flash Memory
+int CmdEraseSector(char* paramstr)
+{
+    int err = 0;
+    int sector;
+    sector = atoi(paramstr);
+    // make sure this is in a valid range, and prevent erasing sector 0
+    if (sector == 0 || sector > 127)
+    {
+        err = 1;
+    }
+    else
+    {
+        sfm_erase_64k(sector);
+    }
+    return err;
+}
+
+// write one 256-byte page within one sector on SFM
+int CmdWritePage(char* paramstr)
+{
+    int err = 0;
+    int sector, page, fill_value;
+    int n_param;
+    int data[256];
+    int i;
+    
+    // read three parameters from parameter string
+    n_param = sscanf(paramstr,"%d %d %d",&sector, &page, &fill_value);
+    
+    // error checking
+    if (n_param != 3 || sector == 0 || sector > 127 || page < 0 || page > 255
+            || fill_value < 0 || fill_value > 255)
+    {
+        err = 1;
+    }
+    else
+    {
+        // fill the test array
+        for (i=0 ; i<256 ; i++)
+        {
+            data[i]=fill_value;
+        }
+        // write the page
+        sfm_write_page(sector, page, data);
     }
     return err;
 }
