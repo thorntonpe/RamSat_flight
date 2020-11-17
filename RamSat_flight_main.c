@@ -22,6 +22,7 @@
 #include "he100.h"
 #include "security.h"
 #include "sd_test.h"
+#include "telemetry.h"
 #include "command.h"
 #include "sgp4.h"
 #include <stdlib.h>
@@ -726,8 +727,11 @@ int main(void) {
     int telem_count1 = 0;
     int telem_count2 = 0;
     
-    // initialize telemetry output arrays
-    char telem_out0[128];
+    // initialize counters for SFM output pages
+    int page_count0 = 0;
+    
+    // single-page data array for the level-0 telemetry
+    char telem_level0[256];
     
     // set a high interrupt priority for uplink, clear the UART2 receive
     // interrupt flag, and enable the interrupt source
@@ -758,14 +762,12 @@ int main(void) {
             telem_level1_elapsed++;
             telem_level2_elapsed++;
             
-            // check if any telemtry levels are triggered
+            // check if any telemetry levels are triggered
             if (telem_level0_elapsed == telem_level0_trigger)
             {
-                // gather level-0 telemetry
-                //telem_get0(telem_count0, telem_out0);
-                //write_string1(telem_out0);
-                // increment record counter and reset elapsed counter
-                telem_count0++;
+                // perform level-0 telemetry operations
+                telem_gather_level0(&telem_count0, &page_count0, telem_level0);
+                // reset elapsed counter
                 telem_level0_elapsed = 0;
             }
             if (telem_level1_elapsed == telem_level1_trigger)

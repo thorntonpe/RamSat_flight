@@ -437,7 +437,7 @@ int CmdWritePage(char* paramstr)
     int err = 0;
     int sector, page, fill_value;
     int n_param;
-    int data[256];
+    char data[256];
     int i;
     
     // read three parameters from parameter string
@@ -460,7 +460,7 @@ int CmdWritePage(char* paramstr)
         data[255]=0;
         
         // write the page
-        sfm_write_page(sector, page, data);
+        sfm_write_page(sector, page, data, 256);
     }
     return err;
 }

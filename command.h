@@ -6,6 +6,7 @@
  */
 
 // function prototypes 
+void CmdNoOp(void);
 int CmdFileCount(void);
 int CmdFileList(void);
 int CmdFileDump(char *paramstr);

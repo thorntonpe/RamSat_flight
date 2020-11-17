@@ -146,12 +146,10 @@ void sfm_erase_64k(int sector)
     while (ReadSR() & 0x1);
 }
 
-void sfm_write_page(int sector, int page, int* data)
+void sfm_write_page(int sector, int page, char* data, int nbytes)
 {
     int i;
-    // assumes that data is a 256-byte long array
-    // and that the given page on the given secotr is previously erased and ready to write.
-    // write the data value to SFM
+    // write nbytes from the data array to specified sector and page of SFM
     // send the write enable command
     CS_SFM = 0;
     write_spi3(SFM_WEN);
@@ -163,9 +161,9 @@ void sfm_write_page(int sector, int page, int* data)
     write_spi3(page);
     write_spi3(0);
     // loop through data array and write all bytes
-    for (i=0 ; i<256 ; i++)
+    for (i=0 ; i<nbytes ; i++)
     {
-        write_spi3(*data++);
+        write_spi3((int)*data++);
     }
     CS_SFM = 1;
     // wait for the write operation to complete by monitoring bit 0 of the SR
