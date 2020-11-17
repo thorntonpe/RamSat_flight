@@ -14,6 +14,7 @@ int CmdGetDateTime(void);
 int CmdSetDateTime(char* paramstr, int param_nbytes);
 int CmdEraseSector(char* paramstr);
 int CmdWritePage(char* paramstr);
+int CmdDownlinkPage(char* paramstr);
 void CmdSetPDT(void);
 void CmdReset(void);
 

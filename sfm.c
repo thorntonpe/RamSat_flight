@@ -172,6 +172,24 @@ void sfm_write_page(int sector, int page, int* data)
     while (ReadSR() & 0x1);
 }
 
+void sfm_read_page(int sector, int page, int* data)
+{
+    int i;
+    // assumes that data is a 256-byte long array
+    // and that the given page on the given sector is previously written and ready to read.
+    CS_SFM = 0;
+    write_spi3(SFM_READ);
+    write_spi3(sector);
+    write_spi3(page);
+    write_spi3(0);
+    // loop through data array and read all bytes
+    for (i=0 ; i<256 ; i++)
+    {
+        *data++ = write_spi3(0);
+    }
+    CS_SFM = 1;
+}
+
 int test_sfm(void) 
 {
     // do a test write and read operation to the SFM

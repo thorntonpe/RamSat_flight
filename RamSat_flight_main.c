@@ -835,33 +835,47 @@ int main(void) {
                         case 0: // No-Op command - just send acknowledgment message 
                             CmdNoOp();
                             break;
+                        
                         case 1: // return the number of files on SD card
                             cmd_err = CmdFileCount();
                             break;
+                        
                         case 2: // list details for each file on SD card
                             cmd_err = CmdFileList();
                             break;
+                        
                         case 3: // dump the contents of a named file
                             cmd_err = CmdFileDump(cmd_paramstr);
                             break;
+                        
                         case 4: // uplink a new Two-Line Element (TLE)
                             cmd_err = CmdNewTLE(cmd_paramstr,param_nbytes, &isNewTLE);
                             break;
+                        
                         case 5: // return the current date and time from RTC
                             cmd_err = CmdGetDateTime();
                             break;
+                        
                         case 6: // Set the date and time on RTC
                             cmd_err = CmdSetDateTime(cmd_paramstr, param_nbytes);
                             break;
+                        
                         case 7: // Erase one 64KB sector on the SFM
                             cmd_err = CmdEraseSector(cmd_paramstr);
                             break;
+                        
                         case 8: // Write one page within one sector on the SFM
                             cmd_err = CmdWritePage(cmd_paramstr);
                             break;
+                        
+                        case 9: // Read one page from SFM and downlink
+                            cmd_err = CmdDownlinkPage(cmd_paramstr);
+                            break;
+                        
                         case 90: // Set post-deployment timer flag (pre-flight)
                             CmdSetPDT();
                             break;
+                        
                         case 99: // Reset the flight computer
                             CmdReset();
                             break;

@@ -26,7 +26,7 @@
 #define B_SIZE2 (B_SIZE*2)+1  // buffer to hold the ascii hex equivalent
 
 // a common array for downlink data
-char downlink_data[255];
+char downlink_data[256];
 // a common array for He-100 response to transmit command
 unsigned char he100_response[8];
 
@@ -444,7 +444,7 @@ int CmdWritePage(char* paramstr)
     n_param = sscanf(paramstr,"%d %d %d",&sector, &page, &fill_value);
     
     // error checking
-    if (n_param != 3 || sector == 0 || sector > 127 || page < 0 || page > 255
+    if (n_param != 3 || sector < 1 || sector > 127 || page < 0 || page > 255
             || fill_value < 0 || fill_value > 255)
     {
         err = 1;
@@ -452,12 +452,49 @@ int CmdWritePage(char* paramstr)
     else
     {
         // fill the test array
-        for (i=0 ; i<256 ; i++)
+        for (i=0 ; i<255 ; i++)
         {
             data[i]=fill_value;
         }
+        // set a null terminator in the last place
+        data[255]=0;
+        
         // write the page
         sfm_write_page(sector, page, data);
+    }
+    return err;
+}
+
+// read one 256-byte page within one sector on SFM, downlink as a string
+int CmdDownlinkPage(char* paramstr)
+{
+    int err = 0;
+    int sector, page;
+    int n_param;
+    int data[256];
+    int i;
+    
+    // read two parameters from parameter string
+    n_param = sscanf(paramstr,"%d %d",&sector, &page);
+    
+    // error checking
+    if (n_param != 2 || sector < 0 || sector > 127 || page < 0 || page > 255)
+    {
+        err = 1;
+    }
+    else
+    {
+        // read the page into data
+        sfm_read_page(sector, page, data);
+        // copy from data (int array) to downlink_data (char array)
+        for (i=0 ; i<254 ; i++)
+        {
+            downlink_data[i] = data[i] & 0x00ff;
+        }
+        // force null-termination in last place, for safety
+        downlink_data[255]=0;
+        // downlink the page as a packet payload string
+        he100_transmit_packet(he100_response, downlink_data);
     }
     return err;
 }

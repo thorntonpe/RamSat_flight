@@ -124,141 +124,6 @@ int he100_telemetry(unsigned char* telem_raw)
     return is_err;
 }
 
-void he100_transmit_test_msg1(unsigned char* response, float batv)
-{
-    int i;
-    unsigned char buf[250];
-    unsigned char msg_len;
-    int packet_len;
-    char test_msg[255];
-    sprintf(test_msg,"Battery voltage = %.2f",batv);
-    
-    // length of test message
-    msg_len = (unsigned char)strlen(test_msg);
-    // packet length = header(8) + msg_len + checksum(2)
-    packet_len = 8 + msg_len + 2;
-    
-    // fill the header
-    buf[0]=0x48;    // 'H'
-    buf[1]=0x65;    // 'e'
-    buf[2]=0x10;    // command prefix (10 = send)
-    buf[3]=0x03;    // command code (03 = transmit)
-    buf[4]=0x00;    // payload size, MSB
-    buf[5]=msg_len; // payload size, LSB
-    // set the CRC bytes for header (skip first two bytes))
-    he100_checksum(&buf[2],4);
-    
-    // fill the payload
-    for (i=0 ; i<msg_len ; i++)
-    {
-        buf[8+i]=test_msg[i];
-    }
-    // checksum for entire packet (skip first two bytes of header)
-    he100_checksum(&buf[2],6+msg_len);
-    
-    // write complete packet to UART2 for transmission
-    for (i=0 ; i<packet_len ; i++)
-    {
-        write_char2(buf[i]);
-    }
-    
-    // read 8-byte response from radio board on UART2
-    for (i=0 ; i<7 ; i++)
-    {
-        *response++ = read_char2();
-    }
-    *response = read_char2();
-}
-
-void he100_transmit_test_msg2(unsigned char* response, char* msg)
-{
-    int i;
-    unsigned char buf[250];
-    unsigned char msg_len;
-    int packet_len;
-    
-    // length of test message
-    msg_len = (unsigned char)strlen(msg);
-    // packet length = header(8) + msg_len + checksum(2)
-    packet_len = 8 + msg_len + 2;
-    
-    // fill the header
-    buf[0]=0x48;    // 'H'
-    buf[1]=0x65;    // 'e'
-    buf[2]=0x10;    // command prefix (10 = send)
-    buf[3]=0x03;    // command code (03 = transmit)
-    buf[4]=0x00;    // payload size, MSB
-    buf[5]=msg_len; // payload size, LSB
-    // set the CRC bytes for header (skip first two bytes))
-    he100_checksum(&buf[2],4);
-    
-    // fill the payload
-    for (i=0 ; i<msg_len ; i++)
-    {
-        buf[8+i]=msg[i];
-    }
-    // checksum for entire packet (skip first two bytes of header)
-    he100_checksum(&buf[2],6+msg_len);
-    
-    // write complete packet to UART2 for transmission
-    for (i=0 ; i<packet_len ; i++)
-    {
-        write_char2(buf[i]);
-    }
-    
-    // read 8-byte response from radio board on UART2
-    for (i=0 ; i<7 ; i++)
-    {
-        *response++ = read_char2();
-    }
-    *response = read_char2();
-}
-
-void he100_transmit_test_msg3(unsigned char* response)
-{
-    int i;
-    unsigned char buf[250];
-    unsigned char msg_len;
-    int packet_len;
-    const char test_msg[] = "Got a data packet!";
-    
-    // length of test message
-    msg_len = (unsigned char)strlen(test_msg);
-    // packet length = header(8) + msg_len + checksum(2)
-    packet_len = 8 + msg_len + 2;
-    
-    // fill the header
-    buf[0]=0x48;    // 'H'
-    buf[1]=0x65;    // 'e'
-    buf[2]=0x10;    // command prefix (10 = send)
-    buf[3]=0x03;    // command code (03 = transmit)
-    buf[4]=0x00;    // payload size, MSB
-    buf[5]=msg_len; // payload size, LSB
-    // set the CRC bytes for header (skip first two bytes))
-    he100_checksum(&buf[2],4);
-    
-    // fill the payload
-    for (i=0 ; i<msg_len ; i++)
-    {
-        buf[8+i]=test_msg[i];
-    }
-    // checksum for entire packet (skip first two bytes of header)
-    he100_checksum(&buf[2],6+msg_len);
-    
-    // write complete packet to UART2 for transmission
-    for (i=0 ; i<packet_len ; i++)
-    {
-        write_char2(buf[i]);
-    }
-    
-    // read 8-byte response from radio board on UART2
-    for (i=0 ; i<7 ; i++)
-    {
-        *response++ = read_char2();
-    }
-    *response = read_char2();
-}
-
 void he100_transmit_packet(unsigned char* response, char* data)
 {
     int i;
@@ -266,8 +131,14 @@ void he100_transmit_packet(unsigned char* response, char* data)
     unsigned char data_len;
     int packet_len;
     
-    // length of test message
+    // Note that the downlink handling assumes the data array is a null-terminated
+    // string.
+    // length of data string
     data_len = (unsigned char)strlen(data);
+    // If the string is longer than the max allowable payload length (255 bytes)
+    // then truncate the end of the string.
+    if (data_len > 255) data_len = 255;
+    
     // packet length = header(8) + data_len + checksum(2)
     packet_len = 8 + data_len + 2;
     
