@@ -253,8 +253,10 @@ int main(void) {
     // one minute. This timer is used for watchdog resets and other periodic
     // operations, and has its period interrupt enabled.
     T2CON = 0x8038;
-    PR3 = 0x0039;
-    PR2 = 0x3870;
+    //PR3 = 0x0039;
+    //PR2 = 0x3870;
+    PR3 = 0x0000;
+    PR2 = 0xF424;
     // reset the timer
     TMR3 = 0x0000;
     TMR2 = 0x0000;
@@ -689,7 +691,7 @@ int main(void) {
     int cmd_id;             // integer value for command ID
     int cmd_err;            // return value for command handlers
     
-    char downlink_msg[255]; // Response/message to be downlinked by RamSat
+    char downlink_msg[260]; // Response/message to be downlinked by RamSat
 
     // Retrieve battery telemetry for startup message
     int adc;  // raw telemetry output
@@ -712,26 +714,17 @@ int main(void) {
     }
 
     // initialize the elapsed time counters for multi-level telemetry
-    int telem_level0_elapsed = 0;
-    int telem_level1_elapsed = 0;
-    int telem_level2_elapsed = 0;
+    int telem_lev0_elapsed = 0;
     
-    // initialize the telemetry period for each level
-    // these values correspond to the number of minutes between telemetry points 
-    int telem_level0_trigger = 1;
-    int telem_level1_trigger = 5;
-    int telem_level2_trigger = 10;
-    
-    // initialize counters for number of telemetry points gathered since last SFM write
-    int telem_count0 = 0;
-    int telem_count1 = 0;
-    int telem_count2 = 0;
-    
-    // initialize counters for SFM output pages
-    int page_count0 = 0;
-    
-    // single-page data array for the level-0 telemetry
-    char telem_level0[256];
+    // data structures to hold telemetry control data 
+    telem_control_type telem_lev0;
+    telem_lev0.record_period = 1;     // 1-minute intervals per record
+    telem_lev0.rec_per_page = 60;     // one page for each hour
+    telem_lev0.page_per_block = 24;   // 24 pages (hours) between timestamps
+    telem_lev0.first_sector = 1;      // first sector to use for this telemetry level
+    telem_lev0.num_sectors = 10;      // number of sectors to use for this telemetry level
+    telem_lev0.record_count = 0;      // record counter
+    telem_lev0.page_count = 0;        // page counter (includes timestamp pages)
     
     // set a high interrupt priority for uplink, clear the UART2 receive
     // interrupt flag, and enable the interrupt source
@@ -746,39 +739,19 @@ int main(void) {
         // cycle through timed events (watchdog reset, telemetry gathering)
         if (minute_elapsed)
         {
-            // disable the UART2 interrupt source
-            // this prevents new uplink from interrupting the WDT reset and downlink
-            _U2RXIE = 0;
             // Reset watchdog timers on each minute boundary
             eps_reset_watchdog();
-            // diagnostic message to ground station
-            sprintf(downlink_msg,"RamSat: EPS watchdog timer reset");
-            he100_transmit_packet(he100_response, downlink_msg);
-            // enable the UART2 interrupt source
-            _U2RXIE = 1;
             
             // track elapsed time for different levels of telemetry
-            telem_level0_elapsed++;
-            telem_level1_elapsed++;
-            telem_level2_elapsed++;
+            telem_lev0_elapsed++;
             
             // check if any telemetry levels are triggered
-            if (telem_level0_elapsed == telem_level0_trigger)
+            if (telem_lev0_elapsed == telem_lev0.record_period)
             {
                 // perform level-0 telemetry operations
-                telem_gather_level0(&telem_count0, &page_count0, telem_level0);
+                telem_gather_lev0(&telem_lev0);
                 // reset elapsed counter
-                telem_level0_elapsed = 0;
-            }
-            if (telem_level1_elapsed == telem_level1_trigger)
-            {
-                // gather level-1 telemetry
-                telem_level1_elapsed = 0;
-            }
-            if (telem_level2_elapsed == telem_level2_trigger)
-            {
-                // gather level-2 telemetry
-                telem_level2_elapsed = 0;
+                telem_lev0_elapsed = 0;
             }
             
             // reset the global 1-minute flag

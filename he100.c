@@ -127,7 +127,7 @@ int he100_telemetry(unsigned char* telem_raw)
 void he100_transmit_packet(unsigned char* response, char* data)
 {
     int i;
-    unsigned char buf[250];
+    unsigned char buf[260];
     unsigned char data_len;
     int packet_len;
     

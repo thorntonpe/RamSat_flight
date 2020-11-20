@@ -26,7 +26,7 @@
 #define B_SIZE2 (B_SIZE*2)+1  // buffer to hold the ascii hex equivalent
 
 // a common array for downlink data
-char downlink_data[256];
+char downlink_data[260];
 // a common array for He-100 response to transmit command
 unsigned char he100_response[8];
 
@@ -451,13 +451,15 @@ int CmdWritePage(char* paramstr)
     }
     else
     {
+        sprintf(downlink_data,"RamSat: test write page fill value = %d",fill_value);
+        he100_transmit_packet(he100_response, downlink_data);
         // fill the test array
-        for (i=0 ; i<255 ; i++)
+        for (i=0 ; i<254 ; i++)
         {
             data[i]=fill_value;
         }
         // set a null terminator in the last place
-        data[255]=0;
+        data[254]=0;
         
         // write the page
         sfm_write_page(sector, page, data, 256);
@@ -492,7 +494,7 @@ int CmdDownlinkPage(char* paramstr)
             downlink_data[i] = data[i] & 0x00ff;
         }
         // force null-termination in last place, for safety
-        downlink_data[255]=0;
+        downlink_data[254]=0;
         // downlink the page as a packet payload string
         he100_transmit_packet(he100_response, downlink_data);
     }
