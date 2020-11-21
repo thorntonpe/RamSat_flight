@@ -18,6 +18,7 @@
 #include "pdt.h"
 #include "rtc.h"
 #include "rtc_user.h"
+#include "telemetry.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -27,11 +28,17 @@
 
 // a common array for downlink data
 char downlink_data[260];
+
 // a common array for He-100 response to transmit command
 unsigned char he100_response[8];
 
 // declare a global variable for the TLE data, defined (for now) in RamSat_flight_main.c
 extern tle_t tle;
+
+// declare global variables for telemetry control, defined in RamSat_flight_main.c
+extern telem_control_type telem_lev0;   // Level 0 control data
+extern telem_control_type telem_lev1;   // Level 1 control data
+extern telem_control_type telem_lev2;   // Level 2 control data
 
 // A No-Op command to verify 2-way radio connection
 void CmdNoOp(void)
@@ -497,6 +504,67 @@ int CmdDownlinkPage(char* paramstr)
         downlink_data[254]=0;
         // downlink the page as a packet payload string
         he100_transmit_packet(he100_response, downlink_data);
+    }
+    return err;
+}
+
+// downlink telemetry control data for requested telemetry level (0, 1, or 2))
+int CmdGetTelemControl(char* paramstr)
+{
+    int err = 0;
+    int telem_level;
+    telem_control_type* p;
+    
+    // read one parameters from parameter string
+    telem_level = atoi(paramstr); 
+    
+    // error checking on available telemetry levels
+    if (telem_level < 0 || telem_level > 2)
+    {
+        err = 1;
+    }
+    else
+    {
+        // select which telemetry level control data to report
+        switch (telem_level)
+        {
+            case 0:  // Level 0 telemetry control
+                p = &telem_lev0;
+                break;
+                
+            case 1:  // Level 1 telemetry control
+                p = &telem_lev1;
+                break;
+                
+            case 2:  // Level 2 telemetry control
+                p = &telem_lev2;
+                break;
+        }
+        
+        // using the assigned pointer, downlink requested telemetry control data
+        sprintf(downlink_data,"RamSat: Reporting telemetry control data for Level %d",telem_level);
+        he100_transmit_packet(he100_response, downlink_data);
+        sprintf(downlink_data,"Lev0: First timestamp = %s, last timestamp = %s", 
+                p->first_timestamp, p->last_timestamp);
+        he100_transmit_packet(he100_response, downlink_data);
+        sprintf(downlink_data,"Lev0: First sector = %d, num_sectors = %d, page_count = %d, record_count = %d",
+                p->first_sector, p->num_sectors, p->page_count, p->record_count);
+        he100_transmit_packet(he100_response, downlink_data);
+        sprintf(downlink_data,"Lev0: record_period = %d, rec_per_page = %d, page_per_block = %d",
+                p->record_period, p->rec_per_page, p->page_per_block);
+        he100_transmit_packet(he100_response, downlink_data);
+        if (p->pagedata[0] != 0)
+        {
+            sprintf(downlink_data,"Lev0: Unwritten page data follows...");
+            he100_transmit_packet(he100_response, downlink_data);
+            he100_transmit_packet(he100_response, p->pagedata);
+            
+        }
+        else
+        {
+            sprintf(downlink_data,"Lev0: No unwritten page data");
+            he100_transmit_packet(he100_response, downlink_data);
+        }
     }
     return err;
 }

@@ -20,7 +20,7 @@ void telem_gather_lev0(telem_control_type* c)
 {
     // In the following, a block is a group of data pages written between timestamp pages
     
-    char isodatetime[128];
+    char isodatetime[30];
     char new_str[16];
     int len;
     float scaled_value;
@@ -35,14 +35,10 @@ void telem_gather_lev0(telem_control_type* c)
     block_count = c->record_count/(c->rec_per_page * c->page_per_block);
     
     // calculate the current sector and page from page_count
-    sector = (c->page_count / PAGES_PER_SECTOR) + c->first_sector;
+    // includes wrapping when sector goes beyond num_sectors
+    sector = ((c->page_count / PAGES_PER_SECTOR) % c->num_sectors) + c->first_sector;
     sector_page = c->page_count % PAGES_PER_SECTOR;
-    
-    // wrap back to first sector if the number of sectors goes above limit
-    if (sector > (c->first_sector + c->num_sectors))
-    {
-        sector = c->first_sector;
-    }
+
     if (sector_page == 0)
     {
         // first page in new sector, so do a sector erase
@@ -63,18 +59,20 @@ void telem_gather_lev0(telem_control_type* c)
             len = strlen(isodatetime);
             // write the timestamp page
             sfm_write_page(sector, sector_page, isodatetime, len+1);
+            // save this timestamp info to control structure
+            // update first once, update last always
+            if (c->first_timestamp[0]==0)
+            {
+                strcpy(c->first_timestamp, isodatetime);
+            }
+            strcpy(c->last_timestamp, isodatetime);
             // increment the page count
             c->page_count = c->page_count+1;
             
             // page_count updated, so recalculate sector and sector_page
-            // and erase new sector, if needed
-            sector = (c->page_count / PAGES_PER_SECTOR) + c->first_sector;
+            // sector wrapping if needed, and erase new sector, if needed
+            sector = ((c->page_count / PAGES_PER_SECTOR) % c->num_sectors) + c->first_sector;
             sector_page = c->page_count % PAGES_PER_SECTOR;
-            // wrap back to first sector if the number of sectors goes above limit
-            if (sector > (c->first_sector + c->num_sectors))
-            {
-                sector = c->first_sector;
-            }
             if (sector_page == 0)
             {
                 // first page in new sector, so do a sector erase
@@ -96,5 +94,7 @@ void telem_gather_lev0(telem_control_type* c)
         len = strlen(c->pagedata);
         sfm_write_page(sector, sector_page, c->pagedata, len+1);
         c->page_count = c->page_count + 1;
+        // reset pagedata with null
+        c->pagedata[0] = 0;
     }
 }

@@ -49,6 +49,11 @@
 // global variable for the current TLE
 tle_t tle;
 
+// global variables for telemetry control
+telem_control_type telem_lev0;   // Level 0 control data
+telem_control_type telem_lev1;   // Level 1 control data
+telem_control_type telem_lev2;   // Level 2 control data
+
 // Global ISR variables for timed events
 // This flag gets set as each minute elapses
 volatile int minute_elapsed = 0;
@@ -716,8 +721,8 @@ int main(void) {
     // initialize the elapsed time counters for multi-level telemetry
     int telem_lev0_elapsed = 0;
     
-    // data structures to hold telemetry control data 
-    telem_control_type telem_lev0;
+    // initialize telemetry control data structures 
+    // Level 0 telemetry control
     telem_lev0.record_period = 1;     // 1-minute intervals per record
     telem_lev0.rec_per_page = 60;     // one page for each hour
     telem_lev0.page_per_block = 24;   // 24 pages (hours) between timestamps
@@ -725,6 +730,30 @@ int main(void) {
     telem_lev0.num_sectors = 10;      // number of sectors to use for this telemetry level
     telem_lev0.record_count = 0;      // record counter
     telem_lev0.page_count = 0;        // page counter (includes timestamp pages)
+    telem_lev0.first_timestamp[0]=0;  // initialize timestamps as null
+    telem_lev0.last_timestamp[0]=0;   // initialize timestamps as null
+    
+    // Level 1 telemetry control
+    telem_lev1.record_period = 1;     // 1-minute intervals per record
+    telem_lev1.rec_per_page = 60;     // one page for each hour
+    telem_lev1.page_per_block = 24;   // 24 pages (hours) between timestamps
+    telem_lev1.first_sector = 1;      // first sector to use for this telemetry level
+    telem_lev1.num_sectors = 10;      // number of sectors to use for this telemetry level
+    telem_lev1.record_count = 0;      // record counter
+    telem_lev1.page_count = 0;        // page counter (includes timestamp pages)
+    telem_lev1.first_timestamp[0]=0;  // initialize timestamps as null
+    telem_lev1.last_timestamp[0]=0;   // initialize timestamps as null
+
+    // Level 2 telemetry control
+    telem_lev2.record_period = 1;     // 1-minute intervals per record
+    telem_lev2.rec_per_page = 60;     // one page for each hour
+    telem_lev2.page_per_block = 24;   // 24 pages (hours) between timestamps
+    telem_lev2.first_sector = 1;      // first sector to use for this telemetry level
+    telem_lev2.num_sectors = 10;      // number of sectors to use for this telemetry level
+    telem_lev2.record_count = 0;      // record counter
+    telem_lev2.page_count = 0;        // page counter (includes timestamp pages)
+    telem_lev2.first_timestamp[0]=0;  // initialize timestamps as null
+    telem_lev2.last_timestamp[0]=0;   // initialize timestamps as null
     
     // set a high interrupt priority for uplink, clear the UART2 receive
     // interrupt flag, and enable the interrupt source
@@ -845,6 +874,10 @@ int main(void) {
                         
                         case 9: // Read one page from SFM and downlink
                             cmd_err = CmdDownlinkPage(cmd_paramstr);
+                            break;
+                            
+                        case 10: // Read telemetry control data for a specified level
+                            cmd_err = CmdGetTelemControl(cmd_paramstr);
                             break;
                         
                         case 90: // Set post-deployment timer flag (pre-flight)
