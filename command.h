@@ -17,6 +17,8 @@ int CmdEraseSector(char* paramstr);
 int CmdWritePage(char* paramstr);
 int CmdDownlinkPage(char* paramstr);
 int CmdGetTelemControl(char* paramstr);
+int CmdGetTelemData(char* paramstr);
+int CmdCaptureImage(char* paramstr);
 void CmdSetPDT(void);
 void CmdReset(void);
 

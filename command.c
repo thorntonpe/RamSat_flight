@@ -19,6 +19,9 @@
 #include "rtc.h"
 #include "rtc_user.h"
 #include "telemetry.h"
+#include "arducam.h"
+#include "arducam_user.h"
+#include "spi.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -557,7 +560,8 @@ int CmdGetTelemControl(char* paramstr)
         {
             sprintf(downlink_data,"Lev0: Unwritten page data follows...");
             he100_transmit_packet(he100_response, downlink_data);
-            he100_transmit_packet(he100_response, p->pagedata);
+            sprintf(downlink_data,"%s",p->pagedata);
+            he100_transmit_packet(he100_response, downlink_data);
             
         }
         else
@@ -569,6 +573,177 @@ int CmdGetTelemControl(char* paramstr)
     return err;
 }
 
+// downlink telemetry data by sector and page range
+int CmdGetTelemData(char* paramstr)
+{
+    int err = 0;
+    int n_param;
+    int sector, page;
+    int start_page, stop_page;
+    int data[256];
+    int i;
+    
+    n_param = sscanf(paramstr,"%d %d %d",&sector, &start_page, &stop_page);
+    
+    // error checking
+    if (n_param != 3 || sector > 127 || start_page > 255 || stop_page > 255)
+    {
+        err = 1;
+    }
+    else
+    {
+        sprintf(downlink_data,"RamSat: Sending telemetry data for sector %d, start_page = %d, stop_page = %d",
+                sector, start_page, stop_page);
+        he100_transmit_packet(he100_response, downlink_data);
+        
+        for (page=start_page ; page<= stop_page ;  page++)
+        {
+            // read the page into data
+            sfm_read_page(sector, page, data);
+            // copy from data (int array) to downlink_data (char array)
+            for (i=0 ; i<254 ; i++)
+            {
+                downlink_data[i] = data[i] & 0x00ff;
+            }
+            // force null-termination in last place, for safety
+            downlink_data[254]=0;
+            // downlink the page as a packet payload string
+            he100_transmit_packet(he100_response, downlink_data);
+        }
+    }
+    
+    return err;
+}
+
+// capture image on CAM1 and CAM2
+int CmdCaptureImage(char* paramstr)
+{
+    int err = 0;
+    int image_number;         // user-defined index for commanded images (0-999)
+    MEDIA * sd_dat;           // pointer to SD card data structure
+    MFILE * fp;               // pointer to file data structure
+    char fname[16];           // character string to hold filename
+    long cap_msec_cam1, cap_msec_cam2;  // number of miliseconds required to capture image
+    long fifo_length_cam1, fifo_length_cam2; // length of FIFO buffer on arduchip
+    int len1, len2, len3;     // bytes read from length registers
+    long totb;                // total bytes written to file
+    long bcount;              // byte count for write
+    char imgdata[SDBUFSIZE];  // temporary buffer to hold data between FIFO and SD file
+    int byte1;                // single byte read from FIFO via SPI
+    int i;                    // counter
+    unsigned int nb;          //number of bytes written per chunk
+    unsigned int nwrite;      // number of bytes requested to write per chunk
+
+    // get the image number from command parameter
+    image_number = atoi(paramstr);
+    
+    // attempt to mount SD card
+    sd_dat = SD_mount();
+    if (!sd_dat)
+    {
+        sprintf(downlink_data,"RamSat: CmdCaptureImage->SD_mount Error: %d",FError);
+        he100_transmit_packet(he100_response, downlink_data);                
+        err = FError;
+    }
+    else
+    {
+        // good SD card mount, so proceed with image capture on both cameras
+        // clear the arducam output buffer for both cameras
+        arduchip_clear_fifo(CAM1);
+        arduchip_clear_fifo(CAM2);
+        // capture an image from the camera, store time in msec fro each capture
+        cap_msec_cam1 = arduchip_start_capture(CAM1);
+        cap_msec_cam2 = arduchip_start_capture(CAM2);
+        // read the size of camera fifo buffers
+        fifo_length_cam1 = arduchip_fifo_length(&len1, &len2, &len3, CAM1);
+        fifo_length_cam2 = arduchip_fifo_length(&len1, &len2, &len3, CAM2);
+        
+        // open a file in write mode, for image data output from camera 1
+        sprintf(fname,"CMD1_%03d.JPG",image_number);
+        fp = fopenM(fname, "w");
+        if (!fp)
+        {
+            sprintf(downlink_data,"RamSat: CmdCaptureImage->File open error cam1 #%d",FError);
+            he100_transmit_packet(he100_response, downlink_data);                
+            err = FError;
+        }
+        else
+        {
+            // write image data from camera 1 to SD card
+            // read the image data from the FIFO in burst mode
+            CS_CAM1 = 0;         // select the device
+            write_spi2(0x3c);   // start burst read mode
+            totb = 0L;          // total bytes written
+            bcount = fifo_length_cam1;  // counter to keep track of bytes to read
+            while (bcount > 0)
+            {
+                if (bcount < SDBUFSIZE)
+                    nwrite=bcount;
+                else
+                    nwrite=SDBUFSIZE;
+                // read nwrite bytes from FIFO and store in imgdata buffer
+                for (i=0 ; i<nwrite ; i++)
+                {
+                    byte1 = write_spi2(0x00);
+                    imgdata[i] = byte1;
+                }
+                // write the bytes in imgdata buffer to file
+                nb = fwriteM(imgdata, nwrite, fp);
+                // update counters
+                bcount -= nwrite;
+                totb += nb;
+            }
+            CS_CAM1 = 1;  // deselect the device
+            // close the file
+            fcloseM(fp);
+        }
+        
+        // open a file in write mode, for image data output from camera 1
+        sprintf(fname,"CMD2_%03d.JPG",image_number);
+        fp = fopenM(fname, "w");
+        if (!fp)
+        {
+            sprintf(downlink_data,"RamSat: CmdCaptureImage->File open error cam2 #%d",FError);
+            he100_transmit_packet(he100_response, downlink_data);                
+            err = FError;
+        }
+        else
+        {
+            // write image data from camera 2 file to SD card
+            // read the image data from the FIFO in burst mode
+            CS_CAM2 = 0;         // select the device
+            write_spi2(0x3c);   // start burst read mode
+            totb = 0L;          // total bytes written
+            bcount = fifo_length_cam2;  // counter to keep track of bytes to read
+            while (bcount > 0)
+            {
+                if (bcount < SDBUFSIZE)
+                    nwrite=bcount;
+                else
+                    nwrite=SDBUFSIZE;
+                // read nwrite bytes from FIFO and store in imgdata buffer
+                for (i=0 ; i<nwrite ; i++)
+                {
+                    byte1 = write_spi2(0x00);
+                    imgdata[i] = byte1;
+                }
+                // write the bytes in imgdata buffer to file
+                nb = fwriteM(imgdata, nwrite, fp);
+                // update counters
+                bcount -= nwrite;
+                totb += nb;
+            }
+            CS_CAM2 = 1;  // deselect the device
+            // close the file
+            fcloseM(fp);
+        }
+    }
+    // unmount the SD card
+    SD_umount();
+    
+    return err;
+}
+    
 // Set the MUST_WAIT flag for post-deployment timer, in SFM
 void CmdSetPDT(void)
 {

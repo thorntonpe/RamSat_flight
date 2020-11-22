@@ -277,8 +277,9 @@ int main(void) {
     
     // Set desired baud rates for UART2 (He-100 radio or USB interfaces)
 #ifdef HE100
-    init_data.u2br_request = 115200;   // UART2 desired baud rate for radio
+    init_data.u2br_request = 9600;   // UART2 desired baud rate for radio
     unsigned char he100_response[8];
+    char downlink_msg[260]; // Response/message to be downlinked by RamSat
     unsigned char he100_telem[26];
 #endif
     
@@ -523,26 +524,6 @@ int main(void) {
     }
 #endif // HE100
     
-#ifdef TEST_ARDUCAM
-    // test camera interfaces
-    write_string1("-----------------------------------");
-    write_string1("Test: Arducam Interfaces and Operation");
-    write_string1("-----------------------------------");
-    sprintf(msg,"Cameras power on status = 0x%02x",cameras_on_status);
-    write_string1(msg);
-    // test the arducam SPI interface with write/read
-    int arducam_spi_iserror = test_arducam_spi();
-    sprintf(msg,"Arducam SPI: Test is_error = %d", arducam_spi_iserror);
-    write_string1(msg);
-    // initialize arduchip and OV2640 sensor for both cameras
-    int arducam_init_iserror = init_arducam();
-    sprintf(msg,"Arducam Init: Test is_error = %d", arducam_init_iserror);
-    write_string1(msg);
-    // start the image capture test loop
-    int arducam_capture_iserror = test_arducam_capture();
-    sprintf(msg,"Arducam Capture: Test is_error = %d", arducam_capture_iserror);
-    write_string1(msg);
-#endif // TEST_ARDUCAM
     
     // test directory operations on SD card
     int sd_list_iserror = test_sd_list();
@@ -568,6 +549,32 @@ int main(void) {
 
 #endif // RS-232 interface
 
+#ifdef TEST_ARDUCAM
+    // test camera interfaces
+    //write_string1("-----------------------------------");
+    //write_string1("Test: Arducam Interfaces and Operation");
+    //write_string1("-----------------------------------");
+    sprintf(downlink_msg,"Cameras power on status = 0x%02x",cameras_on_status);
+    //write_string1(msg);
+    he100_transmit_packet(he100_response, downlink_msg);
+    // test the arducam SPI interface with write/read
+    int arducam_spi_iserror = test_arducam_spi();
+    sprintf(downlink_msg,"Arducam SPI: Test is_error = %d", arducam_spi_iserror);
+    he100_transmit_packet(he100_response, downlink_msg);
+    //write_string1(msg);
+    // initialize arduchip and OV2640 sensor for both cameras
+    int arducam_init_iserror = init_arducam();
+    sprintf(downlink_msg,"Arducam Init: Test is_error = %d", arducam_init_iserror);
+    he100_transmit_packet(he100_response, downlink_msg);
+    //write_string1(msg);
+    
+    while(1);
+    
+    // start the image capture test loop
+    int arducam_capture_iserror = test_arducam_capture();
+    sprintf(msg,"Arducam Capture: Test is_error = %d", arducam_capture_iserror);
+    write_string1(msg);
+#endif // TEST_ARDUCAM
 
 #ifdef TEST_ANTS    
     // Simple interface test for ANTs (dual dipole antenna module)
@@ -696,7 +703,6 @@ int main(void) {
     int cmd_id;             // integer value for command ID
     int cmd_err;            // return value for command handlers
     
-    char downlink_msg[260]; // Response/message to be downlinked by RamSat
 
     // Retrieve battery telemetry for startup message
     int adc;  // raw telemetry output
@@ -878,6 +884,14 @@ int main(void) {
                             
                         case 10: // Read telemetry control data for a specified level
                             cmd_err = CmdGetTelemControl(cmd_paramstr);
+                            break;
+                        
+                        case 11: // Read telemetry data for sector and page range
+                            cmd_err = CmdGetTelemData(cmd_paramstr);
+                            break;
+                        
+                        case 12: // Capture image on both cameras, store to SD card
+                            cmd_err = CmdCaptureImage(cmd_paramstr);
                             break;
                         
                         case 90: // Set post-deployment timer flag (pre-flight)
