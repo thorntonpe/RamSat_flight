@@ -28,7 +28,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define B_SIZE 10            // buffer size for reading files
+#define B_SIZE 120            // buffer size for reading files
 #define B_SIZE2 (B_SIZE*2)+1  // buffer to hold the ascii hex equivalent
 
 // a common array for downlink data

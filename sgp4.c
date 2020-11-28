@@ -417,13 +417,14 @@ double ThetaG( double jd)
   return( rval);
 } /*Function thetag*/
 
-void sat_lon_lat_elev( double jd, double *pos, double *lon, double *lat, double *elev)
+void sat_lon_lat_elev( double jd, double *pos, double *lon, double *lat, double *elev, double *lst)
 {
     // returns longitude and latitude in radians for the ground track 
     // of a satellite with specified position pos[0]=x, pos[1]=y, pos[2]=z (km)
     // lat = +/- pi/2 radians
     // lon = +/- pi radians ( 0 = Greenwich, - = west, + = east)
     // elev (km) is approximate, assuming spherical Earth
+    // lst = local sidereal time (0 to 2*pi radians)
     
     // calculate the offset angle to Greenwich at this jd
     double thetag = ThetaG(jd);
@@ -448,5 +449,6 @@ void sat_lon_lat_elev( double jd, double *pos, double *lon, double *lat, double 
     *lat = asin(pos[2]/dce);
     *lon = tlon;
     *elev = dce - earth_radius_in_km;
+    *lst = thetao;
 }
 

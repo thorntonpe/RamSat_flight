@@ -988,16 +988,66 @@ int main(void) {
             // if no error in SGP4 call, continue with orbital prediction
             if (!sgp4_ret)
             {
-                // estimate satellite's groundtrack longitude, latitude, and orbit elevation
-                sat_lon_lat_elev(jd, pos, &lon, &lat, &elev);
+                // test code: downlink the calculated t_since and position
+                _U2RXIE = 0;
+                sprintf(downlink_msg,"RamSat: t_since=%.1lf, pos_x=%.1lf, pos_y=%.1lf, pos_z=%.1lf",
+                        t_since, pos[0], pos[1], pos[2]);
+                he100_transmit_packet(he100_response, downlink_msg);
+                _U2RXIE = 1;
                 
-                double bx, by, bz;
-                calc_WMM(2020.8, lon, lat, 6378.0, &bx, &by, &bz);
-
+                // estimate satellite's groundtrack longitude, latitude, and orbit elevation
+                double lst;  // local sidereal time
+                sat_lon_lat_elev(jd, pos, &lon, &lat, &elev, &lst);
+                
                 // test code: downlink the lon, lat, elev
                 _U2RXIE = 0;
-                sprintf(downlink_msg,"RamSat: SGP4 Coordinates: Lon = %g, Lat = %g, Elev = %g", 
+                sprintf(downlink_msg,"RamSat: spherical Coordinates: Lon = %g, Lat = %g, Elev = %g", 
                         lon * 360.0 / (2.0*pi), lat * 360.0 / (2.0*pi), elev);
+                he100_transmit_packet(he100_response, downlink_msg);
+                _U2RXIE = 1;
+                
+                // correct latitude for ellipsoid
+                double f = 0.003352811; // flattening parameter for ellipsoid
+                double f2 = 1.0-f;
+                double elips_lat = atan(tan(lat)/(f2*f2));
+                
+                // test code: downlink corrected latitude
+                _U2RXIE = 0;
+                sprintf(downlink_msg,"RamSat: Geoid-corrected latitude = %g", 
+                        elips_lat * 360.0 / (2.0*pi));
+                he100_transmit_packet(he100_response, downlink_msg);
+                _U2RXIE = 1;
+                
+                // estimate Earth's magnetic field vector at this location
+                // Note: latitude is geocentric, not geodetic
+                // Note: elevation is distance from center of Earth
+                double b_locx, b_locy, b_locz;  // magnetic field in local tangential coords
+                calc_WMM(2020.8, lon, lat, elev+6378.135, &b_locx, &b_locy, &b_locz);
+                
+                // test code: downlink magnetic field in local tangential coordinates
+                _U2RXIE = 0;
+                sprintf(downlink_msg,"RamSat: WMM Magnetic field in local tangential coords: B_locx = %g, B_locy = %g, B_locz = %g", 
+                        b_locx, b_locy, b_locz);
+                he100_transmit_packet(he100_response, downlink_msg);
+                _U2RXIE = 1;
+                
+                // convert magnetic field local tengential coordinates to ECI coordinates
+                double Bx, By, Bz;
+                double coslat,sinlat,coslst,sinlst;
+                double t1;
+                coslat = cos(lat);
+                sinlat = sin(lat);
+                coslst = cos(lst);
+                sinlst = sin(lst);
+                t1 = b_locz*coslat + b_locx*sinlat;
+                Bx = t1*coslst - b_locy*sinlst;
+                By = t1*sinlst + b_locy*coslst;
+                Bz = b_locz*sinlat + b_locx*coslat;
+                
+                // test code: downlink magnetic field in ECI coordinates
+                _U2RXIE = 0;
+                sprintf(downlink_msg,"RamSat: WMM Magnetic field in ECA coords: Bx = %g, By = %g, Bz = %g", 
+                        Bx, By, Bz);
                 he100_transmit_packet(he100_response, downlink_msg);
                 _U2RXIE = 1;
                 

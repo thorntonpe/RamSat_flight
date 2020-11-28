@@ -90,4 +90,4 @@ int sxpx_posn_vel( const double xnode, const double a, const double ecc,
       const double xl, double *pos, double *vel);
 double centralize_angle( const double ival);
 double ThetaG( double jd);
-void sat_lon_lat_elev( double jd, double *pos, double *lon, double *lat, double *elev);
+void sat_lon_lat_elev( double jd, double *pos, double *lon, double *lat, double *elev, double *lst);
