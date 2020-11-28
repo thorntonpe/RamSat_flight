@@ -32,6 +32,7 @@ unsigned char eps_cameras_on();
 unsigned char eps_cameras_off();
 unsigned char eps_antenna_on();
 unsigned char eps_antenna_off();
+void eps_batvbus_reset();
 
 unsigned char bat_get_status();
 float bat_get_mbt();

@@ -25,6 +25,7 @@
 #include "telemetry.h"
 #include "command.h"
 #include "sgp4.h"
+#include "wmm.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -726,6 +727,7 @@ int main(void) {
 
     // initialize the elapsed time counters for multi-level telemetry
     int telem_lev0_elapsed = 0;
+    int telem_lev1_elapsed = 0;
     
     // initialize telemetry control data structures 
     // Level 0 telemetry control
@@ -743,7 +745,7 @@ int main(void) {
     telem_lev1.record_period = 1;     // 1-minute intervals per record
     telem_lev1.rec_per_page = 60;     // one page for each hour
     telem_lev1.page_per_block = 24;   // 24 pages (hours) between timestamps
-    telem_lev1.first_sector = 1;      // first sector to use for this telemetry level
+    telem_lev1.first_sector = 11;      // first sector to use for this telemetry level
     telem_lev1.num_sectors = 10;      // number of sectors to use for this telemetry level
     telem_lev1.record_count = 0;      // record counter
     telem_lev1.page_count = 0;        // page counter (includes timestamp pages)
@@ -779,6 +781,7 @@ int main(void) {
             
             // track elapsed time for different levels of telemetry
             telem_lev0_elapsed++;
+            telem_lev1_elapsed++;
             
             // check if any telemetry levels are triggered
             if (telem_lev0_elapsed == telem_lev0.record_period)
@@ -787,6 +790,13 @@ int main(void) {
                 telem_gather_lev0(&telem_lev0);
                 // reset elapsed counter
                 telem_lev0_elapsed = 0;
+            }
+            if (telem_lev1_elapsed == telem_lev1.record_period)
+            {
+                // perform level-0 telemetry operations
+                telem_gather_lev1(&telem_lev1);
+                // reset elapsed counter
+                telem_lev1_elapsed = 0;
             }
             
             // reset the global 1-minute flag
@@ -893,13 +903,21 @@ int main(void) {
                         case 12: // Capture image on both cameras, store to SD card
                             cmd_err = CmdCaptureImage(cmd_paramstr);
                             break;
+
+                        case 13: // Turn camera power on (1) or off (0)
+                            cmd_err = CmdCameraPower(cmd_paramstr);
+                            break;
                         
                         case 90: // Set post-deployment timer flag (pre-flight)
                             CmdSetPDT();
                             break;
                         
+                        case 98: // Reset the flight radio
+                            CmdResetHe100();
+                            break;
+
                         case 99: // Reset the flight computer
-                            CmdReset();
+                            CmdResetPIC();
                             break;
 
                         default:
@@ -972,6 +990,9 @@ int main(void) {
             {
                 // estimate satellite's groundtrack longitude, latitude, and orbit elevation
                 sat_lon_lat_elev(jd, pos, &lon, &lat, &elev);
+                
+                double bx, by, bz;
+                calc_WMM(2020.8, lon, lat, 6378.0, &bx, &by, &bz);
 
                 // test code: downlink the lon, lat, elev
                 _U2RXIE = 0;

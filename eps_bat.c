@@ -583,6 +583,18 @@ unsigned char eps_antenna_off()
     return 0x01;    
 }
 
+// Reset the BatV bus (500 ms power-down)
+void eps_batvbus_reset()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x70;
+    command[1] = 0x01;
+    int delay = 1;
+    // send command
+    eps_write_command(nbytes, delay);
+}
+
 // battery telemetry: status byte
 unsigned char bat_get_status()
 {

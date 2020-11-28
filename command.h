@@ -19,8 +19,10 @@ int CmdDownlinkPage(char* paramstr);
 int CmdGetTelemControl(char* paramstr);
 int CmdGetTelemData(char* paramstr);
 int CmdCaptureImage(char* paramstr);
+int CmdCameraPower(char* paramstr);
 void CmdSetPDT(void);
-void CmdReset(void);
+void CmdResetHe100(void);
+void CmdResetPIC(void);
 
 
 

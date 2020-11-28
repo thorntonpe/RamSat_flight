@@ -83,7 +83,94 @@ void telem_gather_lev0(telem_control_type* c)
     
     // gather telemetry, format, and concatenate to page string
     scaled_value = bat_get_batv();
+    // voltage is reported in V, so multiply by 100 to get value that captures 
+    // down to hundredths of a volt.
     sprintf(new_str,",%3.0lf",scaled_value * 100.0);
+    strcat(c->pagedata,new_str);
+    // increment the telemetry counter
+    c->record_count = c->record_count + 1;
+    
+    // if this is the end of the page, write page and increment page_count
+    if (pagerec_count == (c->rec_per_page - 1))
+    {
+        len = strlen(c->pagedata);
+        sfm_write_page(sector, sector_page, c->pagedata, len+1);
+        c->page_count = c->page_count + 1;
+        // reset pagedata with null
+        c->pagedata[0] = 0;
+    }
+}
+
+void telem_gather_lev1(telem_control_type* c)
+{
+    // In the following, a block is a group of data pages written between timestamp pages
+    
+    char isodatetime[30];
+    char new_str[16];
+    int len;
+    float scaled_value;
+    int pagerec_count;   // the current record count on current page
+    int blockpage_count; // the current page count in current block
+    int block_count;     // the current block count
+    int sector, sector_page;
+    
+    // calculate minute, hour, and day count from telem_count
+    pagerec_count = c->record_count % c->rec_per_page;
+    blockpage_count = (c->record_count/c->rec_per_page) % c->page_per_block;
+    block_count = c->record_count/(c->rec_per_page * c->page_per_block);
+    
+    // calculate the current sector and page from page_count
+    // includes wrapping when sector goes beyond num_sectors
+    sector = ((c->page_count / PAGES_PER_SECTOR) % c->num_sectors) + c->first_sector;
+    sector_page = c->page_count % PAGES_PER_SECTOR;
+
+    if (sector_page == 0)
+    {
+        // first page in new sector, so do a sector erase
+        sfm_erase_64k(sector);
+    }
+    
+    // on count = 0, write a time stamp page
+    if (pagerec_count == 0)
+    {
+        // if this is the start of a page period, initialize the page string
+        sprintf(c->pagedata,"%02d",blockpage_count);
+        
+        // if this is also the start of a new block, write a timestamp page
+        if (blockpage_count == 0)
+        {
+            // get the ISO-formatted date+time
+            get_isodatetime(isodatetime);
+            len = strlen(isodatetime);
+            // write the timestamp page
+            sfm_write_page(sector, sector_page, isodatetime, len+1);
+            // save this timestamp info to control structure
+            // update first once, update last always
+            if (c->first_timestamp[0]==0)
+            {
+                strcpy(c->first_timestamp, isodatetime);
+            }
+            strcpy(c->last_timestamp, isodatetime);
+            // increment the page count
+            c->page_count = c->page_count+1;
+            
+            // page_count updated, so recalculate sector and sector_page
+            // sector wrapping if needed, and erase new sector, if needed
+            sector = ((c->page_count / PAGES_PER_SECTOR) % c->num_sectors) + c->first_sector;
+            sector_page = c->page_count % PAGES_PER_SECTOR;
+            if (sector_page == 0)
+            {
+                // first page in new sector, so do a sector erase
+                sfm_erase_64k(sector);
+            }
+        }
+    }
+    
+    // gather telemetry, format, and concatenate to page string
+    scaled_value = bat_get_bati();
+    // current is reported in mA, so divide by ten to get a 3-digit value
+    // that can capture currents greater than 1 A: e.g. 101 would be 1010 mA
+    sprintf(new_str,",%3.0lf",scaled_value / 10.0);
     strcat(c->pagedata,new_str);
     // increment the telemetry counter
     c->record_count = c->record_count + 1;

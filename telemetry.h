@@ -22,6 +22,7 @@ typedef struct
 
 // function prototypes 
 void telem_gather_lev0(telem_control_type* c);
+void telem_gather_lev1(telem_control_type* c);
 
 
 

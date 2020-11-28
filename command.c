@@ -22,6 +22,8 @@
 #include "arducam.h"
 #include "arducam_user.h"
 #include "spi.h"
+#include "eps_bat.h"
+#include "clock.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -696,9 +698,12 @@ int CmdCaptureImage(char* paramstr)
             CS_CAM1 = 1;  // deselect the device
             // close the file
             fcloseM(fp);
+            sprintf(downlink_data,"RamSat: CmdCaptureImage->wrote file %s, size=%ld bytes",
+                    fname, totb);
+            he100_transmit_packet(he100_response, downlink_data);                
         }
         
-        // open a file in write mode, for image data output from camera 1
+        // open a file in write mode, for image data output from camera 2
         sprintf(fname,"CMD2_%03d.JPG",image_number);
         fp = fopenM(fname, "w");
         if (!fp)
@@ -736,6 +741,9 @@ int CmdCaptureImage(char* paramstr)
             CS_CAM2 = 1;  // deselect the device
             // close the file
             fcloseM(fp);
+            sprintf(downlink_data,"RamSat: CmdCaptureImage->wrote file %s, size=%ld bytes",
+                    fname, totb);
+            he100_transmit_packet(he100_response, downlink_data);                
         }
     }
     // unmount the SD card
@@ -744,6 +752,42 @@ int CmdCaptureImage(char* paramstr)
     return err;
 }
     
+// Turn power to camera board on (1) or off (0)
+// When powering on, also initialize cameras
+int CmdCameraPower(char* paramstr)
+{
+    int err = 0;
+    int state = 0;
+    unsigned char pwr_response;
+    int init_response;
+    
+    // get the state parameter
+    state = atoi(paramstr);
+    
+    switch(state)
+    {
+        case 0:
+            pwr_response = eps_cameras_off();
+            err = pwr_response;
+            sprintf(downlink_data,"RamSat: CmdCameraPower->OFF, Successful.");
+            he100_transmit_packet(he100_response, downlink_data);
+            
+        case 1:
+            pwr_response = eps_cameras_on();
+            init_response = init_arducam();
+            err = (pwr_response || init_response);
+            sprintf(downlink_data,"RamSat: CmdCameraPower->ON & INIT, Successful.");
+            he100_transmit_packet(he100_response, downlink_data);
+            
+        default:
+            sprintf(downlink_data,"RamSat: CmdCameraPower->ERROR, Invalid state.");
+            he100_transmit_packet(he100_response, downlink_data);
+            err = 1;
+    }
+    
+    return err;
+}
+
 // Set the MUST_WAIT flag for post-deployment timer, in SFM
 void CmdSetPDT(void)
 {
@@ -751,12 +795,23 @@ void CmdSetPDT(void)
     sfm_write_1byte(PDT_ADR1, PDT_ADR2, PDT_ADR3, MUST_WAIT);
 
     // downlink status message
-    sprintf(downlink_data,"RamSat: MUST_WAIT flag for post-deployment timer is set.");
+    sprintf(downlink_data,"RamSat: CmdSetPDT->MUST_WAIT flag for post-deployment timer is set.");
     he100_transmit_packet(he100_response, downlink_data);
 }
 
+// Power-cycle the flight radio, via EPS reset on the BatV bus (500 ms)
+void CmdResetHe100(void)
+{
+    eps_batvbus_reset();
+    // wait one second to allow bus and He-100 to reset after command
+    long wait = 1000 * TMR1MSEC;
+    TMR1 = 0;
+    while (TMR1 < wait);
+    sprintf(downlink_data,"RamSat: CmdResetHe100->Reset successful.");
+    he100_transmit_packet(he100_response, downlink_data);
+}
 // Reset the flight computer. Try to resolve stuck code or frozen peripherals.
-void CmdReset(void)
+void CmdResetPIC(void)
 {
     sprintf(downlink_data,"RamSat: Attempting flight computer RESET...");
     he100_transmit_packet(he100_response, downlink_data);
