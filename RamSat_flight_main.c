@@ -235,6 +235,13 @@ int main(void) {
     
     init_data_type init_data; // data structure for peripheral initialization
     
+    // data structures for iMTQ (magnetorquer)
+    imtq_resp_common imtq_common;       // iMTQ response from every command
+    imtq_resp_state imtq_state;         // iMTQ state data
+    imtq_resp_mtm imtq_calib_mtm;       // iMTQ calibrated magnetometer data
+    imtq_resp_mtm imtq_raw_mtm;         // iMTQ raw magnetometer data
+    imtq_resp_integ imtq_integ;         // iMTQ MTM integration time parameter
+
     // flags controlling the main program loop
     int isNewTLE = 0;   // flag is set immediately after a new TLE is uplinked
     int isGoodTLE = 0;  // flag is set when a current TLE is available
@@ -769,7 +776,12 @@ int main(void) {
     _U2RXIF = 0;
     _U2RXIE = 1;
         
-    // Enter the main program loop!
+    // Some initialization for iMTQ
+    // set the mtm time integration parameter
+    // (new value is 6, which corresponds to 80 ms)
+    imtq_set_mtm_integ(&imtq_common, &imtq_integ, 6);
+    
+    // Enter the main program loop
     while (1)
     {
         // If the 1-minute flag is set (from Timer2/3 interrupt)
@@ -1048,6 +1060,22 @@ int main(void) {
                 _U2RXIE = 0;
                 sprintf(downlink_msg,"RamSat: WMM Magnetic field in ECA coords: Bx = %g, By = %g, Bz = %g", 
                         Bx, By, Bz);
+                he100_transmit_packet(he100_response, downlink_msg);
+                _U2RXIE = 1;
+                
+                // gather MTM data in satellite frame coordinates
+                // start the MTM measurement
+                imtq_start_mtm(&imtq_common);
+                // delay for MTM integration
+                TMR1 = 0;
+                while (TMR1 <= 82 * TMR1MSEC);
+                // get the calibrated MTM data
+                imtq_get_calib_mtm(&imtq_common, &imtq_calib_mtm);
+                
+                // test code: downlink MTM measurements
+                _U2RXIE = 0;
+                sprintf(downlink_msg,"RamSat: MTM measured field in frame coordinates: B_fx = %ld, B_fy = %ld, B_fz = %ld", 
+                        imtq_calib_mtm.x, imtq_calib_mtm.y, imtq_calib_mtm.z);
                 he100_transmit_packet(he100_response, downlink_msg);
                 _U2RXIE = 1;
                 
