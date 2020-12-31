@@ -455,32 +455,28 @@ int main(void) {
     write_string2(msg);
     sprintf(msg,"ADC: AN15 = %d",ADC1BUF6);
     write_string2(msg);
-#endif
     
-    
-#ifdef RS232
-#ifdef BAT_TELEM
     // test EPS and battery telemetry
     int adc;  // raw telemetry output
-    write_string1("-----------------------------------");
-    write_string1("Test: EPS / Battery Telemetry");
-    write_string1("-----------------------------------");
+    write_string2("-----------------------------------");
+    write_string2("Test: EPS / Battery Telemetry");
+    write_string2("-----------------------------------");
     unsigned char eps_status = eps_get_status();
     sprintf(msg,"EPS status byte = 0x%02x", eps_status);
-    write_string1(msg);
+    write_string2(msg);
     
     unsigned char bat_status = bat_get_status();
     sprintf(msg,"Bat status byte = 0x%02x", bat_status);
-    write_string1(msg);
+    write_string2(msg);
     float batv = eps_get_batv(&adc);
     sprintf(msg,"Battery voltage = %.2f",batv);
-    write_string1(msg);
+    write_string2(msg);
     float bcr1v = eps_get_bcr1v();
     float bcr2v = eps_get_bcr2v();
     float bcr3v = eps_get_bcr3v();
     float bcroutv = eps_get_bcroutv();
     sprintf(msg,"BCR Voltages: %.2f %.2f %.2f %.2f",bcr1v, bcr2v, bcr3v, bcroutv);
-    write_string1(msg);
+    write_string2(msg);
     float bcr1ia = eps_get_bcr1ia();
     float bcr1ib = eps_get_bcr1ib();
     float bcr2ia = eps_get_bcr2ia();
@@ -488,75 +484,29 @@ int main(void) {
     float bcr3ia = eps_get_bcr3ia();
     float bcr3ib = eps_get_bcr3ib();
     sprintf(msg,"BCR Currents: %.2f %.2f %.2f %.2f %.2f %.2f",bcr1ia, bcr1ib, bcr2ia, bcr2ib, bcr3ia, bcr3ib);
-    write_string1(msg);
+    write_string2(msg);
 
     float bati = bat_get_bati();
     int ischarging = bat_get_batischarging();
     sprintf(msg,"Bat current (is_charge) = %.2f, %d", bati, ischarging);
-    write_string1(msg);
-#endif // end of BAT_TELEM
+    write_string2(msg);
     
-#ifdef HE100
-    // test He-100 No-Op
-    int he100_noop_iserror = he100_noop(he100_response);
-    sprintf(msg,"He-100 No-Op iserror = %d",he100_noop_iserror);
-    write_string1(msg);
-    
-    // test He-100 telemetry
-    union he100_telem_union telem_union;
-    int he100_telem_iserror = he100_telemetry(telem_union.raw);
-    if (he100_telem_iserror)
-    {
-        sprintf(msg,"He-100 telemetry checksum error!");
-        write_string1(msg);
-    }
-    else
-    {
-        sprintf(msg,"Telemetry formatted data:");
-        write_string1(msg);
-        sprintf(msg,"Telem: op_counter = %hu",telem_union.telem.op_counter);
-        write_string1(msg);
-        sprintf(msg,"Telem: RSSI = %d",telem_union.telem.rssi);
-        write_string1(msg);
-        sprintf(msg,"Telem: bytes received = %lu",telem_union.telem.bytes_received);
-        write_string1(msg);
-        sprintf(msg,"Telem: bytes transmitted = %lu",telem_union.telem.bytes_transmitted);
-        write_string1(msg);
-    }
-
-    // test the overrun status of UART2 buffer, report and reset
-    if (U2STAbits.OERR)
-    {
-        write_string1("UART2 buffer overflow error! post-telemetry");
-        U2STAbits.OERR = 0;
-    }
-#endif // HE100
-    
-    
-    // test directory operations on SD card
-    int sd_list_iserror = test_sd_list();
-    sprintf(msg,"SD Card: list_iserror = %d",sd_list_iserror);
-    write_string1(msg);
-    
-#ifdef TEST_IMTQ
     // Simple interface test for iMTQ (magnetorquer)
-    write_string1("-----------------------------------");
-    write_string1("Test: iMTQ interface (no-op command)");
-    write_string1("-----------------------------------");
-    imtq_resp_common imtq_common;       // iMTQ response from every command
+    write_string2("-----------------------------------");
+    write_string2("Test: iMTQ interface (no-op command)");
+    write_string2("-----------------------------------");
     imtq_no_op(&imtq_common);
     sprintf(msg,"iMTQ response: command ID = 0x%02x", imtq_common.cc);
-    write_string1(msg);
+    write_string2(msg);
     sprintf(msg,"iMTQ response: status byte = 0x%02x", imtq_common.stat);
-    write_string1(msg);
-    imtq_start_actpwm(&imtq_common,0,0,500,1000);
+    write_string2(msg);
+    //imtq_start_actpwm(&imtq_common,0,0,500,1000);
     
     // hold here
     while (1);
-#endif
 
-#endif // RS-232 interface
-
+#endif // end of USB
+    
 #ifdef TEST_ARDUCAM
     // test camera interfaces
     //write_string1("-----------------------------------");
@@ -781,6 +731,9 @@ int main(void) {
     // (new value is 6, which corresponds to 80 ms)
     imtq_set_mtm_integ(&imtq_common, &imtq_integ, 6);
     
+    // set watchdog timer (currently 32 minutes)
+    eps_set_watchdog();
+    
     // Enter the main program loop
     while (1)
     {
@@ -830,10 +783,10 @@ int main(void) {
             // this prevents new uplink from interrupting the command handler
             _U2RXIE = 0;
             
-            // transmit a diagnostic message
-            sprintf(msg,"Valid packet");
-            //write_string1(msg);
-            
+            // disable the Timer 2/3 interrupt source
+            // this prevents interference with downlink
+            _T3IE = 0;
+
             // parse the packet to look for a command
             // discard extra bytes at beginning and end of packet
             // calculate the length of entire uplink command, and the parameter part
@@ -844,8 +797,6 @@ int main(void) {
             {
                 sprintf(downlink_msg,"RamSat: Packet received, entering command interpreter.");
                 he100_transmit_packet(he100_response, downlink_msg);
-            
-                int param_nbytes = uplink_nbytes-(NKEY+2);
                 // copy the good part of uplink packet into local array
                 memcpy(uplink_cmd,&he100_data[HEAD_NBYTES],uplink_nbytes);
                 // check for the uplink command security key
@@ -855,6 +806,8 @@ int main(void) {
                     // strip the command ID and any parameters out of the 
                     // uplinked packet as separate pieces
                     memcpy(cmd_idstr,uplink_cmd+NKEY,2);
+                    // calculate the length of the parameter part of command
+                    int param_nbytes = uplink_nbytes-(NKEY+2);
                     memcpy(cmd_paramstr,uplink_cmd+NKEY+2,param_nbytes);
                     // make cmd_paramstr a null-terminated string
                     cmd_paramstr[param_nbytes]=0;
@@ -920,6 +873,10 @@ int main(void) {
                             cmd_err = CmdCameraPower(cmd_paramstr);
                             break;
                         
+                        case 14: // dump single packet from named file
+                            cmd_err = CmdFileDumpOnePacket(cmd_paramstr);
+                            break;
+                        
                         case 90: // Set post-deployment timer flag (pre-flight)
                             CmdSetPDT();
                             break;
@@ -963,8 +920,9 @@ int main(void) {
             isdata_flag = 0;
             he100_receive = 0;
 
-            // re-enable the UART2 receive interrupt
+            // re-enable the UART2 receive and Timer 2/3 interrupts
             _U2RXIE = 1;
+            _T3IE = 1;
         }
         
         // After any outstanding uplink commands have been processed,
@@ -1074,7 +1032,7 @@ int main(void) {
                 
                 // test code: downlink MTM measurements
                 _U2RXIE = 0;
-                sprintf(downlink_msg,"RamSat: MTM measured field in frame coordinates: B_fx = %ld, B_fy = %ld, B_fz = %ld", 
+                sprintf(downlink_msg,"RamSat: field measured by calib MTM in frame coordinates: B_fx = %ld, B_fy = %ld, B_fz = %ld", 
                         imtq_calib_mtm.x, imtq_calib_mtm.y, imtq_calib_mtm.z);
                 he100_transmit_packet(he100_response, downlink_msg);
                 _U2RXIE = 1;

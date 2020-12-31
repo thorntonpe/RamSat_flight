@@ -1219,7 +1219,8 @@ unsigned CountDIR(unsigned *fnum)
     {
         free(b);
         free(fp);
-        return FAIL;
+        FError = FE_READDIR_FAIL;
+        return FError;
     }
             
     // 2. loop until you reach the end
@@ -1259,7 +1260,8 @@ unsigned CountDIR(unsigned *fnum)
             {
                 free(b);
                 free(fp);
-                return FAIL;
+                FError = FE_READDIR_FAIL;
+                return FError;
             }
         }
 
@@ -1268,7 +1270,8 @@ unsigned CountDIR(unsigned *fnum)
         {
             free(b);
             free(fp);
-            return NOT_FOUND;       // last entry reached
+            FError = FE_EXCEED_MAXROOT;       // last entry reached
+            return FError;
         }
     
     }// while 

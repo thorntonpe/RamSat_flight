@@ -156,6 +156,19 @@ void eps_reset_watchdog()
     // No response is generated for this command
 }
 
+void eps_set_watchdog()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x21;
+    command[1] = 0x20;
+    int delay = 1;
+    // send command
+    eps_write_command(nbytes, delay);
+    
+    // No response is generated for this command
+}
+
 float eps_get_bcr1v()
 {
     // load command and parameters

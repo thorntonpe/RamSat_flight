@@ -177,8 +177,8 @@ int CmdFileDump(char *paramstr)
     int i;
     char fname[13];
     fname[12]=0;
-    char file_data[B_SIZE];   // the latest chunk of data read from file
-    char hex_data[B_SIZE2];   // the two-byte hex equivalent of the file data
+    unsigned char file_data[B_SIZE];   // the latest chunk of data read from file
+    unsigned char hex_data[B_SIZE2];   // the two-byte hex equivalent of the file data
     unsigned bytes_read;      // the number of bytes in most recent read
     unsigned long total_bytes;// total bytes read for the file
     int npackets;             // number of packets that will be sent
@@ -231,6 +231,9 @@ int CmdFileDump(char *paramstr)
             // null terminate the hex_data
             hex_data[bytes_read*2]=0;
             sprintf(downlink_data,"RamSat:%6d %s",packet_num,hex_data);
+            TMR1 = 0;
+            while (TMR1 < 100*TMR1MSEC);
+            
             he100_transmit_packet(he100_response, downlink_data);            
         }
         packet_num++;
@@ -252,6 +255,98 @@ int CmdFileDump(char *paramstr)
     
     // unmount the SD card, free memory, and return
     SD_umount();
+    free (fp1->buffer);
+    free(fp1);
+    return err;            
+}
+
+// Downlink a single numbered packet from a named file
+int CmdFileDumpOnePacket(char *paramstr)
+{
+    int err = 0;
+    MEDIA * sd_dat;    // pointer to SD card data structure
+    MFILE * fp1;       // pointer to file data structure
+    int i;
+    char fname[13];
+    fname[12]=0;
+    unsigned char file_data[B_SIZE];   // the latest chunk of data read from file
+    unsigned char hex_data[B_SIZE2];   // the two-byte hex equivalent of the file data
+    unsigned bytes_read;      // the number of bytes in most recent read
+    unsigned long total_bytes;// total bytes read for the file
+    int npackets;             // number of packets that will be sent
+    int packet_num;           // current packet
+    int req_pacnum;           // the index for single packet requested to downlink
+    int n_param;              // number of parameters passed to command
+    
+    n_param = sscanf(paramstr,"%s %d",fname, &req_pacnum);
+
+    // attempt to mount SD card
+    sd_dat = SD_mount();
+    if (!sd_dat)
+    {
+        sprintf(downlink_data,"RamSat: CmdFileDumpOnePacket->SD_mount Error: %d",FError);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return FError;
+    }
+    
+    // open specified file for reading
+    fp1 = fopenM(fname, "r");
+    if (!fp1)
+    {
+        sprintf(downlink_data,"RamSat: CmdFileDumpOnePacket->fopenM Error: %d",FError);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return FError;
+    }
+    
+    // first calculate the expected number of packets, adding one for a short packet
+    npackets = fp1->size/B_SIZE;
+    if (fp1->size%B_SIZE) npackets++;
+    // send a message with filename, size, and number of packets to expect
+    sprintf(downlink_data,"RamSat: %s is open to read: Size=%ld: npackets=%u",fname,fp1->size,npackets);
+    he100_transmit_packet(he100_response, downlink_data);
+    packet_num = 0;
+    total_bytes = 0;
+    // loop until the file is empty
+    do
+    {
+        // read a chunk of data from the file
+        bytes_read = freadM(file_data,B_SIZE,fp1);
+        // if any bytes were read, form a packet and send
+        if (bytes_read && packet_num == req_pacnum)
+        {
+            // sum all bytes read
+            total_bytes += bytes_read;
+            // loop through the bytes and convert to hex equivalent
+            for (i=0 ; i<bytes_read ; i++)
+            {
+                memcpy(&hex_data[i*2],&hex_lut[file_data[i]*2],2);
+            }
+            // null terminate the hex_data
+            hex_data[bytes_read*2]=0;
+            sprintf(downlink_data,"RamSat:%6d %s",bytes_read,hex_data);
+            he100_transmit_packet(he100_response, downlink_data); 
+            break;
+        }
+        packet_num++;
+    } while (bytes_read == B_SIZE);
+    
+    // check the packet number and write a final line to report completion
+    if (packet_num == req_pacnum)
+    {
+        sprintf(downlink_data,"RamSat: %s dump complete, packet %d found",fname, req_pacnum);
+        he100_transmit_packet(he100_response, downlink_data);
+        err = 0;
+    }
+    else
+    {
+        sprintf(downlink_data,"RamSat: %s dump complete, packet %d NOT found",fname, req_pacnum);
+        he100_transmit_packet(he100_response, downlink_data);
+        err = 0;
+    }
+    
+    // unmount the SD card, free memory, and return
+    SD_umount();
+    free (fp1->buffer);
     free(fp1);
     return err;            
 }
@@ -771,6 +866,7 @@ int CmdCameraPower(char* paramstr)
             err = pwr_response;
             sprintf(downlink_data,"RamSat: CmdCameraPower->OFF, Successful.");
             he100_transmit_packet(he100_response, downlink_data);
+            break;
             
         case 1:
             pwr_response = eps_cameras_on();
@@ -778,6 +874,7 @@ int CmdCameraPower(char* paramstr)
             err = (pwr_response || init_response);
             sprintf(downlink_data,"RamSat: CmdCameraPower->ON & INIT, Successful.");
             he100_transmit_packet(he100_response, downlink_data);
+            break;
             
         default:
             sprintf(downlink_data,"RamSat: CmdCameraPower->ERROR, Invalid state.");

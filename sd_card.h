@@ -35,6 +35,8 @@ extern char FError; 	        // mailbox for error reporting
 #define FE_INVALID_MODE    18   // Mode was not r.w.d.
 #define FE_FIND_ERROR      19   // Failure during FILE search
 #define FE_WFAT_ERROR      20   // Failed during WriteFAT()
+#define FE_READDIR_FAIL    21   // Failed during ReadDIR()
+#define FE_EXCEED_MAXROOT  22   // Exceeded the allowed number of files in ROOT
 
 typedef struct { 
     LBA     fat;                // lba of FAT
