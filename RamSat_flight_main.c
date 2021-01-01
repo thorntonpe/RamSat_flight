@@ -47,6 +47,9 @@
 //#define BAT_TELEM  // include outputs for battery telemetry on RS232
 #define UART2_INTERRUPT  // test the use of interrupt handler for incoming UART data
 
+// global variable for initialization data
+init_data_type init_data; // data structure for peripheral initialization
+
 // global variable for the current TLE
 tle_t tle;
 
@@ -232,9 +235,6 @@ void _ISR _U2RXInterrupt (void)
 #endif // UART_INTERRUPT
 
 int main(void) {
-    
-    init_data_type init_data; // data structure for peripheral initialization
-    
     // data structures for iMTQ (magnetorquer)
     imtq_resp_common imtq_common;       // iMTQ response from every command
     imtq_resp_state imtq_state;         // iMTQ state data
@@ -438,7 +438,7 @@ int main(void) {
     write_string2("-----------------------------------");
     write_string2("Test: Sun Sensor Analog to Digital Conversion");
     write_string2("-----------------------------------");
-    adc_test_ssac();
+    adc_scan_all();
     sprintf(msg,"ADC: AN17 = %d",ADC1BUF7);
     write_string2(msg);
     sprintf(msg,"ADC: AN9  = %d",ADC1BUF0);
@@ -875,6 +875,10 @@ int main(void) {
                         
                         case 14: // dump single packet from named file
                             cmd_err = CmdFileDumpOnePacket(cmd_paramstr);
+                            break;
+                        
+                        case 15: // Return current telemetry for one system 
+                            cmd_err = CmdCurrentTelemetry(cmd_paramstr);
                             break;
                         
                         case 90: // Set post-deployment timer flag (pre-flight)

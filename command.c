@@ -24,6 +24,9 @@
 #include "spi.h"
 #include "eps_bat.h"
 #include "clock.h"
+#include "adc.h"
+#include "init.h"
+#include "imtq.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -36,6 +39,9 @@ char downlink_data[260];
 
 // a common array for He-100 response to transmit command
 unsigned char he100_response[8];
+
+// declare a global variable for initialization data, defined in Ramsat_flight_main.c
+extern init_data_type init_data;
 
 // declare a global variable for the TLE data, defined (for now) in RamSat_flight_main.c
 extern tle_t tle;
@@ -183,9 +189,18 @@ int CmdFileDump(char *paramstr)
     unsigned long total_bytes;// total bytes read for the file
     int npackets;             // number of packets that will be sent
     int packet_num;           // current packet
+    int n_param;              // number of parameters passed to command
     
-    // assumes that the parameter passed to CmdFileDump is an 8.3 filename
-    memcpy(fname,paramstr,12);
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%s",fname);
+    if (n_param != 1)
+    {
+        sprintf(downlink_data,"RamSat: CmdFileDump->wrong n_param: %d",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
+    //memcpy(fname,paramstr,12);
 
     // attempt to mount SD card
     sd_dat = SD_mount();
@@ -278,7 +293,14 @@ int CmdFileDumpOnePacket(char *paramstr)
     int req_pacnum;           // the index for single packet requested to downlink
     int n_param;              // number of parameters passed to command
     
+    // read parameter string, return if too few parameters
     n_param = sscanf(paramstr,"%s %d",fname, &req_pacnum);
+    if (n_param != 2)
+    {
+        sprintf(downlink_data,"RamSat: CmdFileDumpOnePacket->wrong n_param: %d",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
 
     // attempt to mount SD card
     sd_dat = SD_mount();
@@ -707,6 +729,128 @@ int CmdGetTelemData(char* paramstr)
             // downlink the page as a packet payload string
             he100_transmit_packet(he100_response, downlink_data);
         }
+    }
+    
+    return err;
+}
+
+// Return the current telemetry for one system, specified by the index value in paramstr
+int CmdCurrentTelemetry(char* paramstr)
+{
+    int err = 0;
+    int n_param;
+    int index = 0;
+    unsigned char bat_status, eps_status;
+    int ischarging, bat_nbr, bat_nar, bat_nmr;
+    float batv, bati, bat_mbt, bat_dbt;
+    float eps_bcr1v, eps_bcr2v, eps_bcr3v, eps_bcroutv;
+    float eps_bcr1ia, eps_bcr1ib, eps_bcr2ia, eps_bcr2ib, eps_bcr3ia, eps_bcr3ib;
+    float eps_bati, eps_bus12i, eps_bus5i, eps_bus33i, eps_eps5i, eps_eps33i, eps_mbt;
+    imtq_resp_common imtq_common;       // iMTQ response from every command
+    imtq_resp_mtm imtq_calib_mtm;       // iMTQ calibrated magnetometer data
+
+    // get the index parameter
+    n_param = sscanf(paramstr, "%d", &index);
+    
+    // return current telemetry depending on index
+    switch(index)
+    {
+        case 1:  // battery telemetry
+            // response header
+            sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving battery telemetry, index %d", index);
+            he100_transmit_packet(he100_response, downlink_data);
+            // gather telemetry
+            bat_status = bat_get_status();
+            batv = bat_get_batv();
+            bati = bat_get_bati();
+            ischarging = bat_get_batischarging();
+            bat_mbt = bat_get_mbt();
+            bat_dbt = bat_get_dbt();
+            bat_nbr = bat_get_nbr();
+            bat_nar = bat_get_nar();
+            bat_nmr = bat_get_nmr();
+            // format and send response
+            sprintf(downlink_data,"Bat Telem: 0x%02x %.2f %.2f %d %.2f %.2f %d %d %d",
+                    bat_status, batv, bati, ischarging, bat_mbt, bat_dbt, bat_nbr, bat_nar, bat_nmr);
+            he100_transmit_packet(he100_response, downlink_data);
+            break;
+        
+        case 2:  // EPS telemetry
+            // response header
+            sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving EPS telemetry, index %d", index);
+            he100_transmit_packet(he100_response, downlink_data);
+            // gather telemetry
+            eps_status = eps_get_status();
+            eps_bcr1v = eps_get_bcr1v();
+            eps_bcr2v = eps_get_bcr2v();
+            eps_bcr3v = eps_get_bcr3v();
+            eps_bcroutv = eps_get_bcroutv();
+            eps_bcr1ia = eps_get_bcr1ia();
+            eps_bcr1ib = eps_get_bcr1ib();
+            eps_bcr2ia = eps_get_bcr2ia();
+            eps_bcr2ib = eps_get_bcr2ib();
+            eps_bcr3ia = eps_get_bcr3ia();
+            eps_bcr3ib = eps_get_bcr3ib();
+            eps_bati = eps_get_bati();
+            eps_bus12i = eps_get_bus12i();
+            eps_bus5i = eps_get_bus5i();
+            eps_bus33i = eps_get_bus33i();
+            eps_eps5i = eps_get_eps5i();
+            eps_eps33i = eps_get_eps33i();
+            eps_mbt = eps_get_mbt();            
+            // format and send response
+            sprintf(downlink_data,"EPS Telem: 0x%02x %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f",
+                    eps_status, eps_bcr1v, eps_bcr2v, eps_bcr3v, eps_bcroutv,
+                    eps_bcr1ia, eps_bcr1ib, eps_bcr2ia, eps_bcr2ib, eps_bcr3ia, eps_bcr3ib,
+                    eps_bati, eps_bus12i, eps_bus5i, eps_bus33i, eps_eps5i, eps_eps33i, eps_mbt);
+            he100_transmit_packet(he100_response, downlink_data);
+            break;
+            
+        case 3:  // sun sensor telemetry
+            // response header
+            sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving sun sensor telemetry, index %d", index);
+            he100_transmit_packet(he100_response, downlink_data);
+            // gather telemetry
+            adc_scan_all();
+            // format and send response
+            sprintf(downlink_data,"SS Telem: +X=(%d, %d) -X=(%d, %d) +Y=(%d, %d) -Y=(%d, %d)",
+                    ADC1BUF4, ADC1BUF0, ADC1BUF6, ADC1BUF2, ADC1BUF3, ADC1BUF7, ADC1BUF5, ADC1BUF1);
+            he100_transmit_packet(he100_response, downlink_data);
+            break;
+            
+        case 4:  // IMTQ magnetometer telemetry
+            // response header
+            sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving IMTQ magnetometer telemetry, index %d", index);
+            he100_transmit_packet(he100_response, downlink_data);
+            // gather telemetry: MTM data in frame coordinates
+            // start the MTM measurement
+            imtq_start_mtm(&imtq_common);
+            // delay for MTM integration
+            TMR1 = 0;
+            while (TMR1 <= 82 * TMR1MSEC);
+            // get the calibrated MTM data
+            imtq_get_calib_mtm(&imtq_common, &imtq_calib_mtm);
+            // format and send response
+            sprintf(downlink_data,"MTM Telem: B_fx=%ld, B_fy=%ld, B_fz=%ld", 
+                    imtq_calib_mtm.x, imtq_calib_mtm.y, imtq_calib_mtm.z);
+            he100_transmit_packet(he100_response, downlink_data);
+            break;
+            
+        case 5:  // Startup telemetry
+            // response header
+            sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving startup telemetry, index %d", index);
+            he100_transmit_packet(he100_response, downlink_data);
+            // telemetry is already in init_data structure from startup sequence
+            sprintf(downlink_data,"Init Telem: %ld %ld %ld %d %d %d %d %d %d %d %d %d %d",
+                    init_data.u2br_actual, init_data.i2c1br, init_data.i2c2br,
+                    init_data.adc_iserror, init_data.sfm_iserror, init_data.sd_iserror,
+                    init_data.rtc_flags_iserror, init_data.rtc_flags2_iserror, init_data.rtc_clear_iserror,
+                    init_data.rtc_flags, init_data.rtc_flags2, init_data.pdt_status, init_data.pdt_flag);
+            break;
+            
+        default:
+            sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->ERROR, invalid index (%d)", index);
+            he100_transmit_packet(he100_response, downlink_data);
     }
     
     return err;

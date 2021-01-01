@@ -19,6 +19,7 @@ int CmdWritePage(char* paramstr);
 int CmdDownlinkPage(char* paramstr);
 int CmdGetTelemControl(char* paramstr);
 int CmdGetTelemData(char* paramstr);
+int CmdCurrentTelemetry(char* paramstr);
 int CmdCaptureImage(char* paramstr);
 int CmdCameraPower(char* paramstr);
 void CmdSetPDT(void);

@@ -41,4 +41,7 @@ float bat_get_batv();
 float bat_get_bati();
 int   bat_get_batischarging();
 float bat_get_dbt();
+int   bat_get_nbr();
+int   bat_get_nar();
+int   bat_get_nmr();
 

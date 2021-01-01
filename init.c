@@ -61,6 +61,8 @@ void init_motherboard_components(init_data_type *init_data_p)
     
     // test the real-time clock (M41T81S) and read the flag values
     init_data_p->rtc_flags_iserror = rtc_read_flags(&(init_data_p->rtc_flags));
+    init_data_p->rtc_flags2_iserror = 0;
+    init_data_p->rtc_clear_iserror = 0;
     
     // if the RTC HALT flag is set, read the clock registers and save the
     // date and time of previous halt

@@ -8,7 +8,7 @@
 // function prototypes 
 int init_adc(void);
 int adc_test_msac(void);
-void adc_test_ssac(void);
+void adc_scan_all(void);
 
 
 

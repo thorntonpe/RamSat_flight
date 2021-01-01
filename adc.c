@@ -77,7 +77,7 @@ int adc_test_msac(void)
 }
 
 // a multi-channel test for the ADC: scan sample, auto conversion
-void adc_test_ssac(void)
+void adc_scan_all(void)
 {
     _ASAM = 1;  // start scan sampling
     while (!_DONE);

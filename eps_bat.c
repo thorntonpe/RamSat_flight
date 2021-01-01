@@ -715,4 +715,57 @@ float bat_get_dbt()
     return ((float)adc * 0.428580355) - 262.0490741;
 }
 
+// battery telemetry: number of brown-out resets
+int bat_get_nbr()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x31;
+    command[1] = 0x00;
+    int delay = 1;
+    // send command
+    bat_write_command(nbytes, delay);
+    // read response
+    bat_read_response(2);
+    // convert 2-byte result to int
+    int nbr = (response[0] <<8) | response[1];
+    // the useful status byte is the second byte returned
+    return nbr;
+}
+
+// battery telemetry: number of automatic resets
+int bat_get_nar()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x32;
+    command[1] = 0x00;
+    int delay = 1;
+    // send command
+    bat_write_command(nbytes, delay);
+    // read response
+    bat_read_response(2);
+    // convert 2-byte result to int
+    int nar = (response[0] <<8) | response[1];
+    // the useful status byte is the second byte returned
+    return nar;
+}
+
+// battery telemetry: number of manual resets
+int bat_get_nmr()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x33;
+    command[1] = 0x00;
+    int delay = 1;
+    // send command
+    bat_write_command(nbytes, delay);
+    // read response
+    bat_read_response(2);
+    // convert 2-byte result to int
+    int nmr = (response[0] <<8) | response[1];
+    // the useful status byte is the second byte returned
+    return nmr;
+}
 
