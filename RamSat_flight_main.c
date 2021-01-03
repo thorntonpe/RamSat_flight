@@ -26,6 +26,7 @@
 #include "command.h"
 #include "sgp4.h"
 #include "wmm.h"
+#include "position_attitude.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -49,14 +50,14 @@
 
 // global variable for initialization data
 init_data_type init_data; // data structure for peripheral initialization
-
 // global variable for the current TLE
 tle_t tle;
-
 // global variables for telemetry control
 telem_control_type telem_lev0;   // Level 0 control data
 telem_control_type telem_lev1;   // Level 1 control data
 telem_control_type telem_lev2;   // Level 2 control data
+// global variable for position and attitude data
+position_attitude_type posatt;
 
 // Global ISR variables for timed events
 // This flag gets set as each minute elapses
@@ -255,6 +256,20 @@ int main(void) {
     double lon;         // current longitude (radians)
     double elev;        // current elevation of orbit (km)
     int sgp4_ret;       // return value for the main SGP4 call
+    double f, f2;       // temporary variables for ellipsoid correction
+    double cor_lat;     // correct latitude for ellipsoid
+    double lst;         // local sidereal time
+    double b_locx, b_locy, b_locz;  // magnetic field in local tangential coords
+    double Bx, By, Bz;  // Magnetic field in ECI coordinates
+    double coslat,sinlat,coslst,sinlst; // for intermediate calculations
+    double t1;          // temporary variable
+    
+    char isodatetime[25];  // for test code reporting of time
+    int loop_counter;
+
+    // precalculate ellipsoid flattening parameter
+    f = 0.003352811;    // flattening parameter for ellipsoid
+    f2 = (1.0-f)*(1.0-f);
     
     // Initialize the PIC24 timers
     // Initialize TIMER1 (16-bit), using system clock and 1:256 prescalar
@@ -424,7 +439,6 @@ int main(void) {
     write_string2("-----------------------------------");
     write_string2("Test: Real Time Clock and Julian Date");
     write_string2("-----------------------------------");
-    char isodatetime[25];
     double jdate;
     get_isodatetime(isodatetime);
     sprintf(msg,"RTC: ISO8601 datetime = ");
@@ -938,7 +952,15 @@ int main(void) {
             SGP4_init(sat_params, &tle);
             // clear the new TLE flag, set the good TLE flag
             isNewTLE = 0;
-            isGoodTLE = 1;            
+            isGoodTLE = 1;
+            // test code to get timing for the main loop
+            // on the first pass with a new TLE, write out the isodatetime
+            get_isodatetime(isodatetime);
+            _U2RXIE = 0;
+            sprintf(downlink_msg,"RamSat: New TLE, ISO datetime: %s",isodatetime);
+            he100_transmit_packet(he100_response, downlink_msg);
+            _U2RXIE = 1;
+            loop_counter = 0;
         }
         
         // If there is a good TLE, use it and RTC data to make an orbital prediction
@@ -946,69 +968,27 @@ int main(void) {
         {
             // Read the RTC and format as a julian date.
             get_juliandate(&jd);
-            
-            // test code: downlink the retrieved julian date
-            _U2RXIE = 0;
-            sprintf(downlink_msg,"RamSat: Current Julian date = %.8lf",jd);
-            he100_transmit_packet(he100_response, downlink_msg);
-            _U2RXIE = 1;
-
             // Calculate the time since epoch of current TLE, in minutes.
             t_since = (jd - tle.epoch) * 1440.;
-            
-            // call the SGP4 routine to calculate position (not calculating velocity))
+            // call the SGP4 routine to calculate position (not calculating velocity)
             sgp4_ret = SGP4(t_since, &tle, sat_params, pos, NULL);
-            
             // if no error in SGP4 call, continue with orbital prediction
             if (!sgp4_ret)
             {
-                // test code: downlink the calculated t_since and position
-                _U2RXIE = 0;
-                sprintf(downlink_msg,"RamSat: t_since=%.1lf, pos_x=%.1lf, pos_y=%.1lf, pos_z=%.1lf",
-                        t_since, pos[0], pos[1], pos[2]);
-                he100_transmit_packet(he100_response, downlink_msg);
-                _U2RXIE = 1;
-                
                 // estimate satellite's groundtrack longitude, latitude, and orbit elevation
-                double lst;  // local sidereal time
+                // lat and lon are in radians, elev is meters above mean radius
+                // lst (local sidereal time) is in [units]
                 sat_lon_lat_elev(jd, pos, &lon, &lat, &elev, &lst);
-                
-                // test code: downlink the lon, lat, elev
-                _U2RXIE = 0;
-                sprintf(downlink_msg,"RamSat: spherical Coordinates: Lon = %g, Lat = %g, Elev = %g", 
-                        lon * 360.0 / (2.0*pi), lat * 360.0 / (2.0*pi), elev);
-                he100_transmit_packet(he100_response, downlink_msg);
-                _U2RXIE = 1;
-                
-                // correct latitude for ellipsoid
-                double f = 0.003352811; // flattening parameter for ellipsoid
-                double f2 = 1.0-f;
-                double elips_lat = atan(tan(lat)/(f2*f2));
-                
-                // test code: downlink corrected latitude
-                _U2RXIE = 0;
-                sprintf(downlink_msg,"RamSat: Geoid-corrected latitude = %g", 
-                        elips_lat * 360.0 / (2.0*pi));
-                he100_transmit_packet(he100_response, downlink_msg);
-                _U2RXIE = 1;
+                // latitude corrected for ellipsoid (also in radians))
+                cor_lat = atan(tan(lat)/f2);
                 
                 // estimate Earth's magnetic field vector at this location
+                // returns values in local tangential coordinates
                 // Note: latitude is geocentric, not geodetic
                 // Note: elevation is distance from center of Earth
-                double b_locx, b_locy, b_locz;  // magnetic field in local tangential coords
                 calc_WMM(2020.8, lon, lat, elev+6378.135, &b_locx, &b_locy, &b_locz);
                 
-                // test code: downlink magnetic field in local tangential coordinates
-                _U2RXIE = 0;
-                sprintf(downlink_msg,"RamSat: WMM Magnetic field in local tangential coords: B_locx = %g, B_locy = %g, B_locz = %g", 
-                        b_locx, b_locy, b_locz);
-                he100_transmit_packet(he100_response, downlink_msg);
-                _U2RXIE = 1;
-                
-                // convert magnetic field local tengential coordinates to ECI coordinates
-                double Bx, By, Bz;
-                double coslat,sinlat,coslst,sinlst;
-                double t1;
+                // convert magnetic field local tangential coordinates to ECI coordinates
                 coslat = cos(lat);
                 sinlat = sin(lat);
                 coslst = cos(lst);
@@ -1017,13 +997,6 @@ int main(void) {
                 Bx = t1*coslst - b_locy*sinlst;
                 By = t1*sinlst + b_locy*coslst;
                 Bz = b_locz*sinlat + b_locx*coslat;
-                
-                // test code: downlink magnetic field in ECI coordinates
-                _U2RXIE = 0;
-                sprintf(downlink_msg,"RamSat: WMM Magnetic field in ECA coords: Bx = %g, By = %g, Bz = %g", 
-                        Bx, By, Bz);
-                he100_transmit_packet(he100_response, downlink_msg);
-                _U2RXIE = 1;
                 
                 // gather MTM data in satellite frame coordinates
                 // start the MTM measurement
@@ -1034,25 +1007,52 @@ int main(void) {
                 // get the calibrated MTM data
                 imtq_get_calib_mtm(&imtq_common, &imtq_calib_mtm);
                 
-                // test code: downlink MTM measurements
-                _U2RXIE = 0;
-                sprintf(downlink_msg,"RamSat: field measured by calib MTM in frame coordinates: B_fx = %ld, B_fy = %ld, B_fz = %ld", 
-                        imtq_calib_mtm.x, imtq_calib_mtm.y, imtq_calib_mtm.z);
-                he100_transmit_packet(he100_response, downlink_msg);
-                _U2RXIE = 1;
-                
                 // add the sun angle calculations here...
                 
-                // clear flag to prevent continuous downlink
-                isGoodTLE = 0;
-            }
+                // once all orbital and attitude calculations are complete
+                // pause the interrupt handler and copy the results to a data structure
+                // all angles are converted from radians to degrees
+                _U2RXIE = 0;
+                posatt.jd = jd;
+                posatt.t_since = t_since;
+                posatt.x_eci = pos[0];
+                posatt.y_eci = pos[1];
+                posatt.z_eci = pos[2];
+                posatt.lon = lon * (180.0/pi);
+                posatt.lat = lat * (180.0/pi);
+                posatt.cor_lat = cor_lat * (180.0/pi);
+                posatt.lst = lst * (180.0/pi);
+                posatt.B_locx = b_locx;
+                posatt.B_locy = b_locy;
+                posatt.B_locz = b_locz;
+                posatt.B_x = Bx;
+                posatt.B_y = By;
+                posatt.B_z = Bz;
+                posatt.B_fx = imtq_calib_mtm.x;
+                posatt.B_fy = imtq_calib_mtm.y;
+                posatt.B_fz = imtq_calib_mtm.z;
+                // restart the interrupt handler
+                _U2RXIE = 1;
+                
+                // test code for timing of main loop
+                loop_counter++;
+                if (loop_counter = 1000)
+                {
+                    get_isodatetime(isodatetime);
+                    _U2RXIE = 0;
+                    sprintf(downlink_msg,"RamSat: completed 1000 cycles, ISO datetime: %s",isodatetime);
+                    he100_transmit_packet(he100_response, downlink_msg);
+                    _U2RXIE = 1;
+                    // reset the loop counter, to get timing reports every 1000 cycles
+                    loop_counter = 0;
+                }
+            }   // end of no error on sgp4
             else
             {
-                sprintf(downlink_msg,"RamSat: SGP4 Error = %d",sgp4_ret);
-                he100_transmit_packet(he100_response, downlink_msg);
+                // will need some error handling here for SGP4 error
             }
-        }
-    }
-#endif // use UART2 interrupt
+        }   // end of isGoodTLE
+    }       // end of main program loop
+#endif      // use UART2 interrupt
     
 }

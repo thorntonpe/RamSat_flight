@@ -27,6 +27,7 @@
 #include "adc.h"
 #include "init.h"
 #include "imtq.h"
+#include "position_attitude.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -42,6 +43,9 @@ unsigned char he100_response[8];
 
 // declare a global variable for initialization data, defined in Ramsat_flight_main.c
 extern init_data_type init_data;
+
+// declare a global variable for position and attitude data, defined in Ramsat_flight_main.c
+extern position_attitude_type posatt;
 
 // declare a global variable for the TLE data, defined (for now) in RamSat_flight_main.c
 extern tle_t tle;
@@ -846,6 +850,21 @@ int CmdCurrentTelemetry(char* paramstr)
                     init_data.adc_iserror, init_data.sfm_iserror, init_data.sd_iserror,
                     init_data.rtc_flags_iserror, init_data.rtc_flags2_iserror, init_data.rtc_clear_iserror,
                     init_data.rtc_flags, init_data.rtc_flags2, init_data.pdt_status, init_data.pdt_flag);
+            he100_transmit_packet(he100_response, downlink_data);
+            break;
+            
+        case 6:
+            // response header
+            sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving position and attitude telemetry, index %d", index);
+            he100_transmit_packet(he100_response, downlink_data);
+            // telemetry is already in the posatt data structure, as long as 
+            // a TLE has been uploaded.
+            sprintf(downlink_data,"PosAtt Telem: %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf",
+                    posatt.jd, posatt.t_since, posatt.x_eci, posatt.y_eci, posatt.z_eci,
+                    posatt.lon, posatt.lat, posatt.cor_lat, posatt.lst,
+                    posatt.B_locx, posatt.B_locy, posatt.B_locz, posatt.B_x, posatt.B_y, posatt.B_z,
+                    posatt.B_fx, posatt.B_fy, posatt.B_fz);
+            he100_transmit_packet(he100_response, downlink_data);
             break;
             
         default:
