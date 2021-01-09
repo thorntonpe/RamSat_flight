@@ -294,7 +294,6 @@ int main(void) {
     _T3IE = 1;
     
     long wait;          // Timer trigger
-    int ui;             // user input, for ground testing
     int i;
     char msg[128];      // character string for messages to user via COM port
     
@@ -1010,9 +1009,7 @@ int main(void) {
                 // add the sun angle calculations here...
                 
                 // once all orbital and attitude calculations are complete
-                // pause the interrupt handler and copy the results to a data structure
                 // all angles are converted from radians to degrees
-                _U2RXIE = 0;
                 posatt.jd = jd;
                 posatt.t_since = t_since;
                 posatt.x_eci = pos[0];
@@ -1031,21 +1028,19 @@ int main(void) {
                 posatt.B_fx = imtq_calib_mtm.x;
                 posatt.B_fy = imtq_calib_mtm.y;
                 posatt.B_fz = imtq_calib_mtm.z;
-                // restart the interrupt handler
-                _U2RXIE = 1;
                 
                 // test code for timing of main loop
-                loop_counter++;
-                if (loop_counter = 1000)
-                {
-                    get_isodatetime(isodatetime);
-                    _U2RXIE = 0;
-                    sprintf(downlink_msg,"RamSat: completed 1000 cycles, ISO datetime: %s",isodatetime);
-                    he100_transmit_packet(he100_response, downlink_msg);
-                    _U2RXIE = 1;
-                    // reset the loop counter, to get timing reports every 1000 cycles
-                    loop_counter = 0;
-                }
+                //loop_counter++;
+                //if (loop_counter == 100)
+                //{
+                //    get_isodatetime(isodatetime);
+                //    _U2RXIE = 0;
+                //    sprintf(downlink_msg,"RamSat: completed 1000 cycles, ISO datetime: %s",isodatetime);
+                //    he100_transmit_packet(he100_response, downlink_msg);
+                //    _U2RXIE = 1;
+                //    // reset the loop counter, to get timing reports every 1000 cycles
+                //    loop_counter = 0;
+                //}
             }   // end of no error on sgp4
             else
             {

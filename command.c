@@ -328,7 +328,7 @@ int CmdFileDumpOnePacket(char *paramstr)
     npackets = fp1->size/B_SIZE;
     if (fp1->size%B_SIZE) npackets++;
     // send a message with filename, size, and number of packets to expect
-    sprintf(downlink_data,"RamSat: %s is open to read: Size=%ld: npackets=%u",fname,fp1->size,npackets);
+    sprintf(downlink_data,"RamSat: %s is open to read packet: Size=%ld: npackets=%u",fname,fp1->size,npackets);
     he100_transmit_packet(he100_response, downlink_data);
     packet_num = 0;
     total_bytes = 0;
@@ -349,7 +349,7 @@ int CmdFileDumpOnePacket(char *paramstr)
             }
             // null terminate the hex_data
             hex_data[bytes_read*2]=0;
-            sprintf(downlink_data,"RamSat:%6d %s",bytes_read,hex_data);
+            sprintf(downlink_data,"RamSat:%6d %s", packet_num, hex_data);
             he100_transmit_packet(he100_response, downlink_data); 
             break;
         }
@@ -763,6 +763,9 @@ int CmdCurrentTelemetry(char* paramstr)
             // response header
             sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving battery telemetry, index %d", index);
             he100_transmit_packet(he100_response, downlink_data);
+            // a delay to let the transmitter complete before getting telemetry
+            TMR1 = 0;
+            while (TMR1 < 1000*TMR1MSEC);
             // gather telemetry
             bat_status = bat_get_status();
             batv = bat_get_batv();
@@ -783,6 +786,9 @@ int CmdCurrentTelemetry(char* paramstr)
             // response header
             sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving EPS telemetry, index %d", index);
             he100_transmit_packet(he100_response, downlink_data);
+            // a delay to let the transmitter complete before getting telemetry
+            TMR1 = 0;
+            while (TMR1 < 1000*TMR1MSEC);
             // gather telemetry
             eps_status = eps_get_status();
             eps_bcr1v = eps_get_bcr1v();
@@ -814,6 +820,9 @@ int CmdCurrentTelemetry(char* paramstr)
             // response header
             sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving sun sensor telemetry, index %d", index);
             he100_transmit_packet(he100_response, downlink_data);
+            // a delay to let the transmitter complete before getting telemetry
+            TMR1 = 0;
+            while (TMR1 < 1000*TMR1MSEC);
             // gather telemetry
             adc_scan_all();
             // format and send response
@@ -826,6 +835,9 @@ int CmdCurrentTelemetry(char* paramstr)
             // response header
             sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving IMTQ magnetometer telemetry, index %d", index);
             he100_transmit_packet(he100_response, downlink_data);
+            // a delay to let the transmitter complete before getting telemetry
+            TMR1 = 0;
+            while (TMR1 < 1000*TMR1MSEC);
             // gather telemetry: MTM data in frame coordinates
             // start the MTM measurement
             imtq_start_mtm(&imtq_common);
