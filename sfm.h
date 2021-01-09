@@ -11,4 +11,3 @@ void sfm_erase_64k(int sector);
 void sfm_write_page(int sector, int page, char* data, int nbytes);
 void sfm_read_page(int sector, int page, int* data);
 int test_sfm(void);
-void clear_pdt_flag(void);

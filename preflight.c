@@ -123,14 +123,3 @@ void preflight_init_rtc()
         }
     }
 }
-
-void preflight_init_predeploy()
-{
-    write_string2("-----------------------------------");
-    write_string2("Pre-flight: Initialize predeployment flag on SFM");
-    write_string2("-----------------------------------");
-    clear_pdt_flag();
-    write_string2("Predeployment flag set to MUST_WAIT");
-    while(1);
-}
-

@@ -11,17 +11,12 @@
 #include "PIC_config.h"
 #include "init.h"
 #include "uart.h"
-#include "preflight.h"
-#include "rtc_user.h"
 #include "datetime.h"
-#include "adc.h"
 #include "eps_bat.h"
-#include "arducam_user.h"
 #include "imtq.h"
 #include "ants.h"
 #include "he100.h"
 #include "security.h"
-#include "sd_test.h"
 #include "telemetry.h"
 #include "command.h"
 #include "sgp4.h"
@@ -35,17 +30,11 @@
 // Configuration for ground testing and flight configurations
 // Input/Output configuration: Define USB or HE100, but not both
 //#define USB      // Enable USB I/O (ground testing only)
-//#define RS232      // enable the RS232 serial interface
 #define HE100    // Enable He-100 transceiver I/O (ground testing or flight)
 
-//#define INIT_RTC   // Pre-flight code to initialize RTC
-//#define INIT_PREDEPLOY // Pre-flight code to set MUST_WAIT flag
-//#define TEST_ARDUCAM
-//#define TEST_IMTQ
 //#define TEST_ANTS
 //#define ANTS_DEPLOY  // just the arm/disarm steps
 //#define ANTS_DEPLOY2 // include the actual deployment steps
-//#define BAT_TELEM  // include outputs for battery telemetry on RS232
 #define UART2_INTERRUPT  // test the use of interrupt handler for incoming UART data
 
 // global variable for initialization data
@@ -63,7 +52,7 @@ position_attitude_type posatt;
 // This flag gets set as each minute elapses
 volatile int minute_elapsed = 0;
 // 32-bit timer (Timer2/3) interrupt handler, for watchdog timer resets
-void _ISR _T3Interrupt (void)
+void __attribute((interrupt,no_auto_psv)) _T3Interrupt (void)
 {
     // set flag to execute watchdog resets in main loop
     minute_elapsed = 1;
@@ -83,17 +72,13 @@ volatile unsigned char he100_head[8]; // command code, payload length, and check
 volatile unsigned char he100_data[258]; // data payload from He-100
 #ifdef UART2_INTERRUPT
 // test code for UART2 receive interrupt handler
-void _ISR _U2RXInterrupt (void)
+void __attribute((interrupt,shadow,no_auto_psv)) _U2RXInterrupt (void)
 {
     int i;
     unsigned char ck_a, ck_b; // checksum bytes
     
     // read a single character from the UART2 receive buffer
     u2rx_char = U2RXREG;
-    
-    // indicate received char by writing ASCII 1 to UART1 (RS-232)
-    //while (U1STAbits.UTXBF);      // wait if the transmit buffer is full)
-    //U1TXREG = 0x31;
     
     // if a header has not been found, keep checking
     if (!ishead_flag)
@@ -162,10 +147,6 @@ void _ISR _U2RXInterrupt (void)
                 ndbytes = (he100_head[4]<<8 | he100_head[5]) + 2;
                 data_byte = 0;
                 isdata_flag = 1;
-                // as a diagnostic to indicate a good header and the start of a
-                // data payload, write an ASCII 2 to UART1.
-                //while (U1STAbits.UTXBF);
-                //U1TXREG = 0x32;
             }
             // if checksum is bad, reject and reset traps
             else
@@ -175,10 +156,6 @@ void _ISR _U2RXInterrupt (void)
                 ishead_flag = 0;
                 isdata_flag = 0;
                 he100_receive = 0;
-                // as a diagnostic to indicate a bad header checksum
-                // on received data, write an ASCII 3 to UART1.
-                //while (U1STAbits.UTXBF);
-                //U1TXREG = 0x33;
             }
         }
     }
@@ -210,10 +187,6 @@ void _ISR _U2RXInterrupt (void)
             {
                 // set flag that a received data packet is ready
                 he100_receive = 1;
-                // as a diagnostic to indicate a good data checksum
-                // on received data, write an ASCII 4 to UART1.
-                //while (U1STAbits.UTXBF);
-                //U1TXREG = 0x34;
             }
             else
             {
@@ -223,10 +196,6 @@ void _ISR _U2RXInterrupt (void)
                 ishead_flag = 0;
                 isdata_flag = 0;
                 he100_receive = 0;
-                // as a diagnostic to indicate a bad data checksum
-                // on received data, write an ASCII 5 to UART1.
-                //while (U1STAbits.UTXBF);
-                //U1TXREG = 0x35;
             }
         }
     }
@@ -293,8 +262,6 @@ int main(void) {
     _T3IF = 0;
     _T3IE = 1;
     
-    long wait;          // Timer trigger
-    int i;
     char msg[128];      // character string for messages to user via COM port
     
     // Set desired baud rates for UART2 (He-100 radio or USB interfaces)
@@ -302,27 +269,12 @@ int main(void) {
     init_data.u2br_request = 9600;   // UART2 desired baud rate for radio
     unsigned char he100_response[8];
     char downlink_msg[260]; // Response/message to be downlinked by RamSat
-    unsigned char he100_telem[26];
 #endif
     
 #ifdef USB    
     init_data.u2br_request = 9600; // UART2 desired baud rate for COM port
 #endif
 
-#ifdef RS232    
-    init_data.u1br_request = 115200; // UART1 desired baud rate
-    // Initialize the UART1 peripheral (RS-232)
-    // this is done outside the init_peripherals() routine since it isn't used 
-    // for flight configuration
-    init_data.u1br_actual = init_uart1(FOSC, init_data.u1br_request);
-    write_string1("---------------------------------------------");
-    write_string1("RamSat flight software: ground testing output (RS232)");
-    sprintf(msg,"test %03d",1);
-    write_string1(msg);
-    write_string1("---------------------------------------------");
-
-#endif
-    
     // set desired clock speeds for SPI peripherals
     init_data.spi1_fsck = 250000;  // SD card, initial speed (250kHz) **check re-mount**
     init_data.spi2_fsck = 4000000; // Arducams (4MHz)
@@ -357,28 +309,6 @@ int main(void) {
     // includes resets for the EPS WDT during post-deploy wait period
     init_wait(&init_data);
 
-#ifdef INIT_RTC
-    // This code is to be used pre-flight to set the date and time.
-    // Should only be used with USB, not HE100.
-    // Enter an infinite user-interface loop with options to display (d) and set (s)
-    // clock, and other options to clear the HALT (c), STOP (t), and OF (f) flags.
-    preflight_init_rtc();
-#endif
-
-#ifdef INIT_PREDEPLOY
-    // THis code is to be used pre-flight to set the predeployment flag
-    // on the serial flash memory. That flag is examined on powerup, and
-    // if set to MUST_WAIT the code forces a 30-minute wait, as required by 
-    // Nanoracks for deployment from the ISS.
-    preflight_init_predeploy();
-#endif    
-    
-#ifdef TEST_ARDUCAM
-    // switch on power to the cameras
-    unsigned char cameras_on_status = 1;
-    cameras_on_status = eps_cameras_on();
-#endif
-
 #ifdef TEST_ANTS
     // switch on power to the antenna (deploy and I2C)
     unsigned char antenna_on_status;
@@ -387,166 +317,6 @@ int main(void) {
     antenna_off_status = eps_antenna_off();
 #endif
     
-#ifdef USB
-    write_string2("-----------------------------------");
-    write_string2("Test: PIC peripheral clock speeds and integrated devices");
-    write_string2("-----------------------------------");
-    sprintf(msg,"UART2: Requested baud rate = %ld", init_data.u2br_request);
-    write_string2(msg);
-    sprintf(msg,"UART2: Actual baud rate    = %ld", init_data.u2br_actual);
-    write_string2(msg);
-    sprintf(msg,"SPI1: clock frequency = %ld", init_data.spi1_fsck);
-    write_string2(msg);
-    sprintf(msg,"SPI1: clock prescalar = %ld", init_data.spi1_prescalar);
-    write_string2(msg);
-    sprintf(msg,"SPI2: clock frequency = %ld", init_data.spi2_fsck);
-    write_string2(msg);
-    sprintf(msg,"SPI2: clock prescalar = %ld", init_data.spi2_prescalar);
-    write_string2(msg);
-    sprintf(msg,"SPI3: clock frequency = %ld", init_data.spi3_fsck);
-    write_string2(msg);
-    sprintf(msg,"SPI3: clock prescalar = %ld", init_data.spi3_prescalar);
-    write_string2(msg);
-    sprintf(msg,"ADC: Initialize is_error = %d", init_data.adc_iserror);
-    write_string2(msg);
-    sprintf(msg,"SFM: Test is_error = %d", init_data.sfm_iserror);
-    write_string2(msg);
-    sprintf(msg,"SD: Test is_error = %d", init_data.sd_iserror);
-    write_string2(msg);
-    sprintf(msg,"RTC: Test flags is_error = %d", init_data.rtc_flags_iserror);
-    write_string2(msg);
-    sprintf(msg,"RTC: Flags = 0x%02x", init_data.rtc_flags);
-    write_string2(msg);
-    if (init_data.rtc_flags)
-    {
-        sprintf(msg,"RTC: Test clear flags is_error = %d", init_data.rtc_clear_iserror);
-        write_string2(msg);
-        sprintf(msg,"RTC: Test flags2 is_error = %d", init_data.rtc_flags2_iserror);
-        write_string2(msg);
-        sprintf(msg,"RTC: Flags2 = 0x%02x", init_data.rtc_flags2);
-        write_string2(msg);
-        sprintf(msg,"RTC: Last halt ISO8601 datetime = ");
-        strcat(msg,init_data.rtc_halt_time);
-        write_string2(msg);
-    }
-    sprintf(msg,"PDT: Wait status = %d", init_data.pdt_status);
-    write_string2(msg);
-    sprintf(msg,"PDT: Wait flag = 0x%02x", init_data.pdt_flag);
-    write_string2(msg);
-    
-    // test the RTC and ISO8601 formatted datetime string function
-    write_string2("-----------------------------------");
-    write_string2("Test: Real Time Clock and Julian Date");
-    write_string2("-----------------------------------");
-    double jdate;
-    get_isodatetime(isodatetime);
-    sprintf(msg,"RTC: ISO8601 datetime = ");
-    strcat(msg,isodatetime);
-    write_string2(msg);
-    get_juliandate(&jdate);
-    sprintf(msg,"RTC: Julian date = %.5lf",jdate);
-    write_string2(msg);
-    
-    // test ADC read from 8 channels: AN9-AN15, AN17
-    write_string2("-----------------------------------");
-    write_string2("Test: Sun Sensor Analog to Digital Conversion");
-    write_string2("-----------------------------------");
-    adc_scan_all();
-    sprintf(msg,"ADC: AN17 = %d",ADC1BUF7);
-    write_string2(msg);
-    sprintf(msg,"ADC: AN9  = %d",ADC1BUF0);
-    write_string2(msg);
-    sprintf(msg,"ADC: AN10 = %d",ADC1BUF1);
-    write_string2(msg);
-    sprintf(msg,"ADC: AN11 = %d",ADC1BUF2);
-    write_string2(msg);
-    sprintf(msg,"ADC: AN12 = %d",ADC1BUF3);
-    write_string2(msg);
-    sprintf(msg,"ADC: AN13 = %d",ADC1BUF4);
-    write_string2(msg);
-    sprintf(msg,"ADC: AN14 = %d",ADC1BUF5);
-    write_string2(msg);
-    sprintf(msg,"ADC: AN15 = %d",ADC1BUF6);
-    write_string2(msg);
-    
-    // test EPS and battery telemetry
-    int adc;  // raw telemetry output
-    write_string2("-----------------------------------");
-    write_string2("Test: EPS / Battery Telemetry");
-    write_string2("-----------------------------------");
-    unsigned char eps_status = eps_get_status();
-    sprintf(msg,"EPS status byte = 0x%02x", eps_status);
-    write_string2(msg);
-    
-    unsigned char bat_status = bat_get_status();
-    sprintf(msg,"Bat status byte = 0x%02x", bat_status);
-    write_string2(msg);
-    float batv = eps_get_batv(&adc);
-    sprintf(msg,"Battery voltage = %.2f",batv);
-    write_string2(msg);
-    float bcr1v = eps_get_bcr1v();
-    float bcr2v = eps_get_bcr2v();
-    float bcr3v = eps_get_bcr3v();
-    float bcroutv = eps_get_bcroutv();
-    sprintf(msg,"BCR Voltages: %.2f %.2f %.2f %.2f",bcr1v, bcr2v, bcr3v, bcroutv);
-    write_string2(msg);
-    float bcr1ia = eps_get_bcr1ia();
-    float bcr1ib = eps_get_bcr1ib();
-    float bcr2ia = eps_get_bcr2ia();
-    float bcr2ib = eps_get_bcr2ib();
-    float bcr3ia = eps_get_bcr3ia();
-    float bcr3ib = eps_get_bcr3ib();
-    sprintf(msg,"BCR Currents: %.2f %.2f %.2f %.2f %.2f %.2f",bcr1ia, bcr1ib, bcr2ia, bcr2ib, bcr3ia, bcr3ib);
-    write_string2(msg);
-
-    float bati = bat_get_bati();
-    int ischarging = bat_get_batischarging();
-    sprintf(msg,"Bat current (is_charge) = %.2f, %d", bati, ischarging);
-    write_string2(msg);
-    
-    // Simple interface test for iMTQ (magnetorquer)
-    write_string2("-----------------------------------");
-    write_string2("Test: iMTQ interface (no-op command)");
-    write_string2("-----------------------------------");
-    imtq_no_op(&imtq_common);
-    sprintf(msg,"iMTQ response: command ID = 0x%02x", imtq_common.cc);
-    write_string2(msg);
-    sprintf(msg,"iMTQ response: status byte = 0x%02x", imtq_common.stat);
-    write_string2(msg);
-    //imtq_start_actpwm(&imtq_common,0,0,500,1000);
-    
-    // hold here
-    while (1);
-
-#endif // end of USB
-    
-#ifdef TEST_ARDUCAM
-    // test camera interfaces
-    //write_string1("-----------------------------------");
-    //write_string1("Test: Arducam Interfaces and Operation");
-    //write_string1("-----------------------------------");
-    sprintf(downlink_msg,"Cameras power on status = 0x%02x",cameras_on_status);
-    //write_string1(msg);
-    he100_transmit_packet(he100_response, downlink_msg);
-    // test the arducam SPI interface with write/read
-    int arducam_spi_iserror = test_arducam_spi();
-    sprintf(downlink_msg,"Arducam SPI: Test is_error = %d", arducam_spi_iserror);
-    he100_transmit_packet(he100_response, downlink_msg);
-    //write_string1(msg);
-    // initialize arduchip and OV2640 sensor for both cameras
-    int arducam_init_iserror = init_arducam();
-    sprintf(downlink_msg,"Arducam Init: Test is_error = %d", arducam_init_iserror);
-    he100_transmit_packet(he100_response, downlink_msg);
-    //write_string1(msg);
-    
-    while(1);
-    
-    // start the image capture test loop
-    int arducam_capture_iserror = test_arducam_capture();
-    sprintf(msg,"Arducam Capture: Test is_error = %d", arducam_capture_iserror);
-    write_string1(msg);
-#endif // TEST_ARDUCAM
-
 #ifdef TEST_ANTS    
     // Simple interface test for ANTs (dual dipole antenna module)
     write_string1("-----------------------------------");
@@ -675,16 +445,9 @@ int main(void) {
     int cmd_err;            // return value for command handlers
     
 
-    // Retrieve battery telemetry for startup message
-    int adc;  // raw telemetry output
-    float batv = eps_get_batv(&adc);
-    
-    // Retrieve He-100 telemetry for startup message
-    union he100_telem_union telem_union;
-    int he100_telem_iserror = he100_telemetry(telem_union.raw);
-    
-    // Downlink the startup message
-    sprintf(downlink_msg,"RamSat: Startup BatV = %.2f, RSSI = %d",batv,telem_union.telem.rssi);
+    // Retrieve battery telemetry and downlink startup message
+    float batv = eps_get_batv();
+    sprintf(downlink_msg,"RamSat: Startup BatV = %.2f",batv);
     he100_transmit_packet(he100_response, downlink_msg);
     
     // test the overrun status of UART2 buffer, report and reset
@@ -907,8 +670,6 @@ int main(void) {
                             break;
 
                         default:
-                            sprintf(msg,"Received an invalid command ID");
-                            //write_string1(msg);
                             sprintf(downlink_msg,"RamSat: %d is an invalid command ID.", cmd_id);
                             he100_transmit_packet(he100_response, downlink_msg);
                     }
@@ -916,16 +677,12 @@ int main(void) {
                 else
                 {
                     // bad or missing security key
-                    sprintf(msg,"Invalid security key in received packet");
-                    //write_string1(msg);
                     sprintf(downlink_msg,"RamSat: Invalid security key.");
                     he100_transmit_packet(he100_response, downlink_msg);
                 }
             } // meets minimum packet length for valid command
             else
             {
-                sprintf(msg,"Packet too short");
-                //write_string1(msg);
                 sprintf(downlink_msg,"RamSat: ERROR - received packet too short.");
                 he100_transmit_packet(he100_response, downlink_msg);
             }
@@ -942,7 +699,7 @@ int main(void) {
             _T3IE = 1;
         }
         
-        // After any outstanding uplink commands have been processed,
+        // After any new uplink commands have been processed,
         // enter the main work segment of the program loop
         
         // If the TLE was just uplinked, initialize the SGP4 parameters

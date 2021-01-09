@@ -26,13 +26,6 @@
 #define SFM_ER32K   0x52   // Erase a 32 Kbyte block at following address
 #define SFM_ER64K   0xd8   // Erase a 64 Kbyte block at following address
 
-// address and flag values for the post-deployment timer
-#define PDT_ADDR1 0x00     // Address on SFM for post-deploy timer flag:
-#define PDT_ADDR2 0x10     // (00, 10, 00) is at the start of the second
-#define PDT_ADDR3 0x00     // 4k block in sector 1.
-#define MUST_WAIT 0x55     // Flag value: Post-deploy timer has not yet completed
-#define DONT_WAIT 0xaa     // Flag value: Post-deploy timer has already completed
-
 int ReadSR( void)
 {
     // read the SFM status register and return its value
@@ -271,56 +264,3 @@ int test_sfm(void)
 
     return is_error;
 }
-
-// set the post-deploy timer flag to pre-deployed configuration
-void clear_pdt_flag(void) 
-{
-    // write MUST_WAIT to the post-deploy timer flag address on SFM
-    
-    // before any data can be written to the chip, the sector protection
-    // must be turned off for the target sector (turned on by default at power-up)
-    // The device determines the correct sector based on 24-bit address sent
-    // send write-enable command
-    CS_SFM = 0;             // select the SFM
-    write_spi3(SFM_WEN);    // send write enable command
-    CS_SFM = 1;               // deselect, terminate command
-    // send sector unprotect command
-    CS_SFM = 0;
-    write_spi3(SFM_SECTUNP);
-    write_spi3(PDT_ADDR1);
-    write_spi3(PDT_ADDR2);
-    write_spi3(PDT_ADDR3);
-    CS_SFM = 1;
-
-    // Erase the designated 4 KByte block 
-    // send write-enable command
-    CS_SFM = 0;
-    write_spi3(SFM_WEN);
-    CS_SFM = 1;
-    // send block erase command
-    CS_SFM = 0;
-    write_spi3(SFM_ER4K);
-    write_spi3(PDT_ADDR1);
-    write_spi3(PDT_ADDR2);
-    write_spi3(PDT_ADDR3);
-    CS_SFM = 1;
-    // wait for the write operation to complete by monitoring bit 0 of the SR
-    while (ReadSR() & 0x1);
-
-    // Write the MUST_WAIT value to deploy timer flag address
-    // send the write enable command
-    CS_SFM = 0;
-    write_spi3(SFM_WEN);
-    CS_SFM = 1;
-    // send the write command, address, and data
-    CS_SFM = 0;
-    write_spi3(SFM_WRITE);
-    write_spi3(PDT_ADDR1);
-    write_spi3(PDT_ADDR2);
-    write_spi3(PDT_ADDR3);
-    write_spi3(MUST_WAIT);
-    CS_SFM = 1;
-    // wait for the write operation to complete by monitoring bit 0 of the SR
-    while (ReadSR() & 0x1);
-}
-

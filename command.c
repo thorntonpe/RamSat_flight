@@ -528,7 +528,7 @@ int CmdSetDateTime(char* paramstr, int param_nbytes)
             err = rtc_clear_flags(rtc_flags);
             if (err)
             {
-                // problem cldearing RTC flags
+                // problem clearing RTC flags
                 sprintf(downlink_data,"RamSat: Set Date/Time Error - RTC flag clearing error");
                 he100_transmit_packet(he100_response, downlink_data);
             }

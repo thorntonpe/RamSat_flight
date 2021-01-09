@@ -12,7 +12,6 @@
 // function prototypes 
 int test_arducam_spi(void);
 int init_arducam(void);
-int test_arducam_capture(void);
 
 
 
