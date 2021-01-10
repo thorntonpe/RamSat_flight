@@ -33,6 +33,8 @@ unsigned char eps_cameras_on();
 unsigned char eps_cameras_off();
 unsigned char eps_antenna_on();
 unsigned char eps_antenna_off();
+unsigned char eps_antenna_status();
+unsigned char eps_get_last_error();
 void eps_batvbus_reset();
 
 unsigned char bat_get_status();

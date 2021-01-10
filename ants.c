@@ -118,13 +118,12 @@ void ants_reset()
     // send the command
     write_ants_command_noack(cmd_nbytes);
     
-    // hardwired wait for device reset
-    wait = 2000L * DELAYMSEC;
+    // hardwired wait for device reset, 2 seconds
+    wait = 1000L * DELAYMSEC;
     TMR1=0;
-    while(TMR1 < wait)
-    {
-        
-    }
+    while(TMR1 < wait);
+    TMR1=0;
+    while(TMR1 < wait);
 }
 
 // report deployment status (also a test of the i2c interface))
@@ -141,8 +140,9 @@ void ants_deploy_status(unsigned char* ants_resp)
     // read the response
     read_ants_response_nack(rsp_nbytes);
     // transfer response bytes into output array
-    *ants_resp++ = response[0];
-    *ants_resp   = response[1];
+    // MSB first, then LSB
+    *ants_resp++ = response[1];
+    *ants_resp   = response[0];
 }
 
 // arm the antenna system to enable deployment
@@ -177,7 +177,7 @@ void ants_deploy_all()
     
     // fill the command bytes
     command[0] = cmd_id;
-    command[1] = 10;     // 10 seconds max to deploy
+    command[1] = 10;     // 10 seconds max to deploy per antenna
     // send the command
     write_ants_command(cmd_nbytes);    
 }
@@ -196,8 +196,8 @@ void ants_time_1(unsigned char* ants_resp)
     // read the response
     read_ants_response_nack(rsp_nbytes);
     // transfer response bytes into output array
-    *ants_resp++ = response[0];
-    *ants_resp   = response[1];
+    *ants_resp++ = response[1];
+    *ants_resp   = response[0];
 }
 
 // time taken to deploy antenna 2
@@ -214,8 +214,8 @@ void ants_time_2(unsigned char* ants_resp)
     // read the response
     read_ants_response_nack(rsp_nbytes);
     // transfer response bytes into output array
-    *ants_resp++ = response[0];
-    *ants_resp   = response[1];
+    *ants_resp++ = response[1];
+    *ants_resp   = response[0];
 }
 
 // time taken to deploy antenna 3
@@ -232,8 +232,8 @@ void ants_time_3(unsigned char* ants_resp)
     // read the response
     read_ants_response_nack(rsp_nbytes);
     // transfer response bytes into output array
-    *ants_resp++ = response[0];
-    *ants_resp   = response[1];
+    *ants_resp++ = response[1];
+    *ants_resp   = response[0];
 }
 
 // time taken to deploy antenna 4
@@ -250,6 +250,6 @@ void ants_time_4(unsigned char* ants_resp)
     // read the response
     read_ants_response_nack(rsp_nbytes);
     // transfer response bytes into output array
-    *ants_resp++ = response[0];
-    *ants_resp   = response[1];
+    *ants_resp++ = response[1];
+    *ants_resp   = response[0];
 }

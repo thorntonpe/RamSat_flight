@@ -32,11 +32,6 @@
 //#define USB      // Enable USB I/O (ground testing only)
 #define HE100    // Enable He-100 transceiver I/O (ground testing or flight)
 
-//#define TEST_ANTS
-//#define ANTS_DEPLOY  // just the arm/disarm steps
-//#define ANTS_DEPLOY2 // include the actual deployment steps
-#define UART2_INTERRUPT  // test the use of interrupt handler for incoming UART data
-
 // global variable for initialization data
 init_data_type init_data; // data structure for peripheral initialization
 // global variable for the current TLE
@@ -51,6 +46,7 @@ position_attitude_type posatt;
 // Global ISR variables for timed events
 // This flag gets set as each minute elapses
 volatile int minute_elapsed = 0;
+
 // 32-bit timer (Timer2/3) interrupt handler, for watchdog timer resets
 void __attribute((interrupt,no_auto_psv)) _T3Interrupt (void)
 {
@@ -70,8 +66,8 @@ volatile int isdata_flag = 0;
 volatile int he100_receive = 0;
 volatile unsigned char he100_head[8]; // command code, payload length, and checksum bytes
 volatile unsigned char he100_data[258]; // data payload from He-100
-#ifdef UART2_INTERRUPT
-// test code for UART2 receive interrupt handler
+
+// UART2 receive interrupt handler
 void __attribute((interrupt,shadow,no_auto_psv)) _U2RXInterrupt (void)
 {
     int i;
@@ -202,9 +198,11 @@ void __attribute((interrupt,shadow,no_auto_psv)) _U2RXInterrupt (void)
     // reset the interrupt flag before exit
     _U2RXIF = 0;
 }
-#endif // UART_INTERRUPT
 
 int main(void) {
+    // program flow control variables
+    long int wait;
+    
     // data structures for iMTQ (magnetorquer)
     imtq_resp_common imtq_common;       // iMTQ response from every command
     imtq_resp_state imtq_state;         // iMTQ state data
@@ -308,142 +306,94 @@ int main(void) {
     // perform the initial deployment test, and wait if the MUST_WAIT flag is set
     // includes resets for the EPS WDT during post-deploy wait period
     init_wait(&init_data);
-
-#ifdef TEST_ANTS
-    // switch on power to the antenna (deploy and I2C)
-    unsigned char antenna_on_status;
-    unsigned char antenna_off_status;
-    //antenna_on_status = eps_antenna_on();
-    antenna_off_status = eps_antenna_off();
-#endif
     
-#ifdef TEST_ANTS    
-    // Simple interface test for ANTs (dual dipole antenna module)
-    write_string1("-----------------------------------");
-    write_string1("Test: ANTs interface (deployment status command)");
-    write_string1("-----------------------------------");
-    sprintf(msg,"Antenna power on status = 0x%02x",antenna_off_status);
-    write_string1(msg);
-    unsigned char ants_response[2];      
-    
-#ifdef ANTS_DEPLOY
-    write_string2("-----------------------------------");
-    write_string2("ANTS Deployment: Arm");
-    write_string2("-----------------------------------");
-    ants_arm();
-    ants_deploy_status(ants_response);
-    sprintf(msg,"ANTs deploy status: byte 1 = 0x%02x", ants_response[0]);
-    write_string2(msg);
-    sprintf(msg,"ANTs deploy status: byte 2 = 0x%02x", ants_response[1]);
-    write_string2(msg);
-    
-#ifdef ANTS_DEPLOY2    
-    write_string2("-----------------------------------");
-    write_string2("ANTS Deployment: Deploy all");
-    write_string2("-----------------------------------");
-    ants_deploy_all();
-    ants_deploy_status(ants_response);
-    sprintf(msg,"ANTs deploy status: byte 1 = 0x%02x", ants_response[0]);
-    write_string2(msg);
-    sprintf(msg,"ANTs deploy status: byte 2 = 0x%02x", ants_response[1]);
-    write_string2(msg);
-    
-    wait = 1000 * DELAYMSEC;
-    while (ants_response[0] & 0x08)
+    // if this is the initial startup after deployment, release antenna
+    // pdt_status of 1 indicates that a deploy wait was completed during init_wait()
+    if (init_data.pdt_status == 1)
     {
-        TMR1 = 0;
-        while (TMR1 < wait);
-        ants_deploy_status(ants_response);
-        write_string2("---");
-        sprintf(msg,"ANTs deploy status: byte 1 = 0x%02x", ants_response[0]);
-        write_string2(msg);
-        sprintf(msg,"ANTs deploy status: byte 2 = 0x%02x", ants_response[1]);
-        write_string2(msg);
+        unsigned char status_byte;
+        // turn on 3.3V power to the antenna via switched PDM #8 on EPS
+        status_byte = eps_antenna_on();
+        // check for error condition from power-on command
+        if (status_byte == 0xff)
+        {
+            init_data.eps_antenna_on_iserror = eps_get_last_error();
+        }
+        else
+        {
+            init_data.eps_antenna_on_iserror = 0;
+        }
+        // verify that PDM #8 is on (could shut itself off due to current limit)
+        init_data.antenna_on_status = eps_antenna_status();
+        // if PDM #8 is off, try the other power circuit (PDM #10)
+        if (init_data.antenna_on_status == 0)
+        {
+            // try the secondary power circuit
+        }
+        // if the power to antenna is on, proceed with arm and deploy sequence
+        if (init_data.antenna_on_status == 1)
+        {
+            unsigned char ants_response[2]; // holds response from antenna commands
+            // get the initial antenna deployment status
+            ants_deploy_status(ants_response);
+            init_data.ants0_deploy_status_msb = ants_response[0];
+            init_data.ants0_deploy_status_lsb = ants_response[1];
+            // arm the antenna deployment mechanism
+            ants_arm();
+            // get the post-armed antenna deployment status
+            ants_deploy_status(ants_response);
+            init_data.ants1_deploy_status_msb = ants_response[0];
+            init_data.ants1_deploy_status_lsb = ants_response[1];
+            // attempt to deploy all four antennas
+            ants_deploy_all();
+            // enter a status polling loop, checking every second until
+            // all antennas are showing status deployed
+            ants_deploy_status(ants_response);
+            wait = 1000 * DELAYMSEC;
+            while ((ants_response[0] & 0x88) || (ants_response[1] & 0x88))
+            {
+                TMR1 = 0;
+                while (TMR1 < wait);
+                ants_deploy_status(ants_response);
+            }
+            // save the final status 
+            init_data.ants2_deploy_status_msb = ants_response[0];
+            init_data.ants2_deploy_status_lsb = ants_response[1];
+            // retrieve and save the deployment times for each antenna
+            ants_time_1(ants_response);
+            init_data.ants_deploy_time1_msb = ants_response[0];
+            init_data.ants_deploy_time1_lsb = ants_response[1];
+            ants_time_2(ants_response);
+            init_data.ants_deploy_time2_msb = ants_response[0];
+            init_data.ants_deploy_time2_lsb = ants_response[1];
+            ants_time_3(ants_response);
+            init_data.ants_deploy_time3_msb = ants_response[0];
+            init_data.ants_deploy_time3_lsb = ants_response[1];
+            ants_time_4(ants_response);
+            init_data.ants_deploy_time4_msb = ants_response[0];
+            init_data.ants_deploy_time4_lsb = ants_response[1];
+            // disarm antenna system
+            ants_disarm();
+            // capture the post-disarm deployment status
+            ants_deploy_status(ants_response);
+            init_data.ants2_deploy_status_msb = ants_response[0];
+            init_data.ants2_deploy_status_lsb = ants_response[1];
+            
+            // turn off 3.3V power to the antenna via switched PDM #8 on EPS
+            status_byte = eps_antenna_off();
+            // check for error condition from power-on command
+            if (status_byte == 0xff)
+            {
+                init_data.eps_antenna_off_iserror = eps_get_last_error();
+            }
+            else
+            {
+                init_data.eps_antenna_off_iserror = 0;
+            }
+            // verify that PDM #8 is on (could shut itself off due to current limit)
+            init_data.antenna_off_status = eps_antenna_status();
+        }
     }
-    
-    write_string2("-----------------------------------");
-    write_string2("ANTS Deployment: Get deploy times");
-    write_string2("-----------------------------------");
-    ants_time_1(ants_response);
-    sprintf(msg,"ANTs time 1: byte 1 = 0x%02x", ants_response[0]);
-    write_string2(msg);
-    sprintf(msg,"ANTs time 1: byte 2 = 0x%02x", ants_response[1]);
-    write_string2(msg);
-    ants_time_2(ants_response);
-    sprintf(msg,"ANTs time 2: byte 1 = 0x%02x", ants_response[0]);
-    write_string2(msg);
-    sprintf(msg,"ANTs time 2: byte 2 = 0x%02x", ants_response[1]);
-    write_string2(msg);
-    ants_time_3(ants_response);
-    sprintf(msg,"ANTs time 3: byte 1 = 0x%02x", ants_response[0]);
-    write_string2(msg);
-    sprintf(msg,"ANTs time 3: byte 2 = 0x%02x", ants_response[1]);
-    write_string2(msg);
-    ants_time_4(ants_response);
-    sprintf(msg,"ANTs time 4: byte 1 = 0x%02x", ants_response[0]);
-    write_string2(msg);
-    sprintf(msg,"ANTs time 4: byte 2 = 0x%02x", ants_response[1]);
-    write_string2(msg);
-#endif // ANTS_DEPLOY2
-    
-    write_string2("-----------------------------------");
-    write_string2("ANTS Deployment: Disarm");
-    write_string2("-----------------------------------");
-    ants_disarm();
-    ants_deploy_status(ants_response);
-    sprintf(msg,"ANTs deploy status: byte 1 = 0x%02x", ants_response[0]);
-    write_string2(msg);
-    sprintf(msg,"ANTs deploy status: byte 2 = 0x%02x", ants_response[1]);
-    write_string2(msg);
-    
-    // look at the battery status after antenna deployment
-    // test EPS and battery telemetry
-    write_string2("-----------------------------------");
-    write_string2("Test: EPS / Battery Telemetry");
-    write_string2("-----------------------------------");
-    eps_status = eps_get_status();
-    sprintf(msg,"EPS status byte = 0x%02x", eps_status);
-    write_string2(msg);
-    bat_status = bat_get_status();
-    sprintf(msg,"Bat status byte = 0x%02x", bat_status);
-    write_string2(msg);
-    batv = eps_get_batv();
-    sprintf(msg,"Battery voltage = %.2f",batv);
-    write_string2(msg);
-    bcr1v = eps_get_bcr1v();
-    bcr2v = eps_get_bcr2v();
-    bcr3v = eps_get_bcr3v();
-    bcroutv = eps_get_bcroutv();
-    sprintf(msg,"BCR Voltages: %.2f %.2f %.2f %.2f",bcr1v, bcr2v, bcr3v, bcroutv);
-    write_string2(msg);
-    bcr1ia = eps_get_bcr1ia();
-    bcr1ib = eps_get_bcr1ib();
-    bcr2ia = eps_get_bcr2ia();
-    bcr2ib = eps_get_bcr2ib();
-    bcr3ia = eps_get_bcr3ia();
-    bcr3ib = eps_get_bcr3ib();
-    sprintf(msg,"BCR Currents: %.2f %.2f %.2f %.2f %.2f %.2f",bcr1ia, bcr1ib, bcr2ia, bcr2ib, bcr3ia, bcr3ib);
-    write_string2(msg);
-    bati = bat_get_bati();
-    ischarging = bat_get_batischarging();
-    sprintf(msg,"Bat current (is_charge) = %.2f, %d", bati, ischarging);
-    write_string2(msg);
-
-#endif // ANTS_DEPLOY
-    
-#endif // TEST_ANTS
-    
-#ifdef UART2_INTERRUPT
-    // Test the use of UART2 receive interrupt to handle incoming data packets
-    
-    // enter the main loop, wait for interrupts
-    char uplink_cmd[255];   // holds the latest uplinked command and parameters
-    char cmd_idstr[3];      // null-terminated string for the command ID
-    cmd_idstr[2]=0;         // null termination
-    char cmd_paramstr[257]; // parameters passed in uplink command
-    int cmd_id;             // integer value for command ID
-    int cmd_err;            // return value for command handlers
-    
 
     // Retrieve battery telemetry and downlink startup message
     float batv = eps_get_batv();
@@ -496,12 +446,6 @@ int main(void) {
     telem_lev2.first_timestamp[0]=0;  // initialize timestamps as null
     telem_lev2.last_timestamp[0]=0;   // initialize timestamps as null
     
-    // set a high interrupt priority for uplink, clear the UART2 receive
-    // interrupt flag, and enable the interrupt source
-    _U2RXIP = 0x07;
-    _U2RXIF = 0;
-    _U2RXIE = 1;
-        
     // Some initialization for iMTQ
     // set the mtm time integration parameter
     // (new value is 6, which corresponds to 80 ms)
@@ -510,6 +454,21 @@ int main(void) {
     // set watchdog timer (currently 32 minutes)
     eps_set_watchdog();
     
+    // variables used by the radio command and control interface
+    char uplink_cmd[255];   // holds the latest uplinked command and parameters
+    char cmd_idstr[3];      // null-terminated string for the command ID
+    cmd_idstr[2]=0;         // null termination
+    char cmd_paramstr[257]; // parameters passed in uplink command
+    int cmd_id;             // integer value for command ID
+    int cmd_err;            // return value for command handlers
+    
+    // Initiate the radio command and control interface:
+    // set a high interrupt priority for uplink, clear the UART2 receive
+    // interrupt flag, and enable the interrupt source. 
+    _U2RXIP = 0x07;
+    _U2RXIF = 0;
+    _U2RXIE = 1;
+        
     // Enter the main program loop
     while (1)
     {
@@ -544,12 +503,25 @@ int main(void) {
             minute_elapsed = 0;
         }
         
-        // test the overrun status of UART2 buffer, report and reset
+        // test the overrun status of UART2 buffer
+        // if overflow error, reset the interrupt handler, clear overflow, and report
         if (U2STAbits.OERR)
         {
-            sprintf(downlink_msg,"RamSat: Main loop UART2 buffer overflow error!");
-            he100_transmit_packet(he100_response, downlink_msg);
+            // disable the UART2 receive interrupt
+            _U2RXIE = 0;
+            // reset the UART2 receive traps
+            nhbytes = 0;
+            ndbytes = 0;
+            ishead_flag = 0;
+            isdata_flag = 0;
+            he100_receive = 0;
+            // clear the overflow error, which also clears the receive buffer
             U2STAbits.OERR = 0;
+            // report overflow
+            sprintf(downlink_msg,"RamSat: Main loop UART2 buffer overflow (cleared)");
+            he100_transmit_packet(he100_response, downlink_msg);
+            // restart the interrupt handler
+            _U2RXIE = 1;
         }
 
         // check for valid data receive on UART2
@@ -805,6 +777,4 @@ int main(void) {
             }
         }   // end of isGoodTLE
     }       // end of main program loop
-#endif      // use UART2 interrupt
-    
 }

@@ -571,9 +571,9 @@ unsigned char eps_antenna_on()
     // send command
     eps_write_command(nbytes, delay);
     // read response
-    //eps_read_response(2);
+    eps_read_response(2);
     // the useful status byte is the second byte returned
-    return 0x01;    
+    return response[1];    
 }
 
 // Turn off PDM Switch #8, 3.3V power to Antenna
@@ -586,14 +586,42 @@ unsigned char eps_antenna_off()
     int delay = 1;
     // send command
     eps_write_command(nbytes, delay);
-    // temp code to turn off the switch #10 on H2.20
-    command[1] = 0x0a;
+    // read response
+    eps_read_response(2);
+    // the useful status byte is the second byte returned
+    return response[1];    
+}
+
+// Check status of PDM Switch #8, 3.3V power to Antenna (1=on, 0=off))
+unsigned char eps_antenna_status()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x54;
+    command[1] = 0x08;
+    int delay = 1;
     // send command
     eps_write_command(nbytes, delay);
     // read response
-    //eps_read_response(2);
+    eps_read_response(2);
     // the useful status byte is the second byte returned
-    return 0x01;    
+    return response[1];    
+}
+
+// Get the last error code
+unsigned char eps_get_last_error()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x03;
+    command[1] = 0x00;
+    int delay = 1;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    // the useful status byte is the second byte returned
+    return response[1];    
 }
 
 // Reset the BatV bus (500 ms power-down)
