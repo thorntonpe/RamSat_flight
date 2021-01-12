@@ -27,6 +27,7 @@
 #include "adc.h"
 #include "init.h"
 #include "imtq.h"
+#include "ants.h"
 #include "position_attitude.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -744,7 +745,7 @@ int CmdCurrentTelemetry(char* paramstr)
     int err = 0;
     int n_param;
     int index = 0;
-    unsigned char bat_status, eps_status;
+    unsigned char bat_status, eps_status, eps_power_status;
     int ischarging, bat_nbr, bat_nar, bat_nmr;
     float batv, bati, bat_mbt, bat_dbt;
     float eps_bcr1v, eps_bcr2v, eps_bcr3v, eps_bcroutv;
@@ -857,15 +858,26 @@ int CmdCurrentTelemetry(char* paramstr)
             sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving startup telemetry, index %d", index);
             he100_transmit_packet(he100_response, downlink_data);
             // telemetry is already in init_data structure from startup sequence
-            sprintf(downlink_data,"Init Telem: %ld %ld %ld %d %d %d %d %d %d %d %d %d %d",
+            sprintf(downlink_data,"Init Telem: %ld %ld %ld %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d",
                     init_data.u2br_actual, init_data.i2c1br, init_data.i2c2br,
                     init_data.adc_iserror, init_data.sfm_iserror, init_data.sd_iserror,
                     init_data.rtc_flags_iserror, init_data.rtc_flags2_iserror, init_data.rtc_clear_iserror,
-                    init_data.rtc_flags, init_data.rtc_flags2, init_data.pdt_status, init_data.pdt_flag);
+                    init_data.rtc_flags, init_data.rtc_flags2, init_data.pdt_status, init_data.pdt_flag,
+                    init_data.eps_antenna_on_iserror, init_data.antenna_on_status, 
+                    init_data.eps_antenna_off_iserror, init_data.antenna_off_status,
+                    init_data.ants0_deploy_status_msb, init_data.ants0_deploy_status_lsb,
+                    init_data.ants1_deploy_status_msb, init_data.ants1_deploy_status_lsb,
+                    init_data.ants2_deploy_status_msb, init_data.ants2_deploy_status_lsb,
+                    init_data.ants3_deploy_status_msb, init_data.ants3_deploy_status_lsb,
+                    init_data.ants_deploy_time1_msb, init_data.ants_deploy_time1_lsb,
+                    init_data.ants_deploy_time2_msb, init_data.ants_deploy_time2_lsb,
+                    init_data.ants_deploy_time3_msb, init_data.ants_deploy_time3_lsb,
+                    init_data.ants_deploy_time4_msb, init_data.ants_deploy_time4_lsb
+                    );
             he100_transmit_packet(he100_response, downlink_data);
             break;
             
-        case 6:
+        case 6: // position and attitude telemetry
             // response header
             sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving position and attitude telemetry, index %d", index);
             he100_transmit_packet(he100_response, downlink_data);
@@ -876,6 +888,27 @@ int CmdCurrentTelemetry(char* paramstr)
                     posatt.lon, posatt.lat, posatt.cor_lat, posatt.lst,
                     posatt.B_locx, posatt.B_locy, posatt.B_locz, posatt.B_x, posatt.B_y, posatt.B_z,
                     posatt.B_fx, posatt.B_fy, posatt.B_fz);
+            he100_transmit_packet(he100_response, downlink_data);
+            break;
+            
+        case 7: // antenna telemetry
+            // response header
+            sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving antenna telemetry, index %d", index);
+            he100_transmit_packet(he100_response, downlink_data);
+            // a delay to let the transmitter complete before getting telemetry
+            TMR1 = 0;
+            while (TMR1 < 1000*TMR1MSEC);
+            // power on the antenna
+            eps_power_status = eps_antenna_on();
+            // a delay to let the antenna circuitry initialize
+            TMR1 = 0;
+            while (TMR1 < 100*TMR1MSEC);
+            // read antenna deployment status
+            unsigned char ants_response[2]; // holds response from antenna commands
+            ants_deploy_status(ants_response);
+            // power off the antenna
+            eps_power_status = eps_antenna_off();
+            sprintf(downlink_data,"Antenna Telem: 0x%02x 0x%02x", ants_response[0],ants_response[1]);
             he100_transmit_packet(he100_response, downlink_data);
             break;
             

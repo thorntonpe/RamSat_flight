@@ -22,14 +22,14 @@ int init_adc(void)
     _ASAM = 0;     // auto-sampling turned off
     _SAMP = 0;     // after initialization, setting SAMP to 1 starts sampling
     // AD1CON2
-    _VCFG = 0;     // use internal V_DD and V_SS as reference voltages (3.3V, GND)
+    _VCFG = 0b000; // use internal V_DD and V_SS as reference voltages (3.3V, GND)
     _CSCNA = 1;    // use single channel (CH0SA) for MUX A input if clear, scan if set
-    _SMPI = 7;     // interrupt after 8th sample/convert
+    _SMPI = 0b00111; // interrupt after 8th sample/convert
     _BUFM = 0;     // 0 = buffer configured as one 32-word buffer (0 to FF)
     _ALTS = 0;     // always use MUX A input multiplexer settings
     // AD1CON3
     _ADRC = 0;     // Clock derived from system clock
-    _SAMC = 6;     // Auto-sample time = 6 * T_AD
+    _SAMC = 0b00110; // Auto-sample time = 6 * T_AD
     _ADCS = 1;     // A/D conversion clock (2*T_CY) gives T_AD = 125 ns.
     // AD1CHS
     _CH0NB = 0;    // Negative input is VR-, as given by _VCFG (MUX B not used)
@@ -77,9 +77,11 @@ int adc_test_msac(void)
 }
 
 // a multi-channel test for the ADC: scan sample, auto conversion
+// makes use of the interrupt flag, even though an interrupt routine is not enabled
 void adc_scan_all(void)
 {
-    _ASAM = 1;  // start scan sampling
-    while (!_DONE);
-    _ASAM = 0;  // stop the scan sampling
+    _AD1IF = 0;   // make sure the interrupt flag is cleared
+    _ASAM = 1;    // start scan sampling (will auto sample 8 channels)
+    while (!_AD1IF); // interrupt flag is set after the last sample is converted
+    _ASAM = 0;  // stop the scan sampling. ADC1BUF0 - ADC1BUF7 are now filled
 }

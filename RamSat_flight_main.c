@@ -345,11 +345,16 @@ int main(void) {
             init_data.ants1_deploy_status_msb = ants_response[0];
             init_data.ants1_deploy_status_lsb = ants_response[1];
             // attempt to deploy all four antennas
-            ants_deploy_all();
+            //ants_deploy_all();
             // enter a status polling loop, checking every second until
             // all antennas are showing status deployed
             ants_deploy_status(ants_response);
-            wait = 1000 * DELAYMSEC;
+            wait = 1000L * DELAYMSEC;
+            
+            // test code
+            sprintf(downlink_msg,"RamSat: entering while()");
+            he100_transmit_packet(he100_response, downlink_msg);
+            
             while ((ants_response[0] & 0x88) || (ants_response[1] & 0x88))
             {
                 TMR1 = 0;
@@ -376,8 +381,8 @@ int main(void) {
             ants_disarm();
             // capture the post-disarm deployment status
             ants_deploy_status(ants_response);
-            init_data.ants2_deploy_status_msb = ants_response[0];
-            init_data.ants2_deploy_status_lsb = ants_response[1];
+            init_data.ants3_deploy_status_msb = ants_response[0];
+            init_data.ants3_deploy_status_lsb = ants_response[1];
             
             // turn off 3.3V power to the antenna via switched PDM #8 on EPS
             status_byte = eps_antenna_off();
@@ -399,6 +404,10 @@ int main(void) {
     float batv = eps_get_batv();
     sprintf(downlink_msg,"RamSat: Startup BatV = %.2f",batv);
     he100_transmit_packet(he100_response, downlink_msg);
+    
+    // wait one second
+    TMR1 = 0;
+    while (TMR1 < 1000L*TMR1MSEC);
     
     // test the overrun status of UART2 buffer, report and reset
     if (U2STAbits.OERR)
