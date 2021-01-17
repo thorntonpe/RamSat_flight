@@ -56,6 +56,9 @@ extern telem_control_type telem_lev0;   // Level 0 control data
 extern telem_control_type telem_lev1;   // Level 1 control data
 extern telem_control_type telem_lev2;   // Level 2 control data
 
+// declare the watchdog timer interrupt flag
+extern int minute_elapsed;
+
 // A No-Op command to verify 2-way radio connection
 void CmdNoOp(void)
 {
@@ -236,6 +239,14 @@ int CmdFileDump(char *paramstr)
     // loop until the file is empty
     do
     {
+        // check the watchdog timer interrupt, reset watchdog if needed
+        // required here because the image dump can take longer than the normal
+        // watchdog period (4 minutes)
+        if (minute_elapsed)
+        {
+            eps_reset_watchdog();
+            minute_elapsed = 0;
+        }
         // read a chunk of data from the file
         bytes_read = freadM(file_data,B_SIZE,fp1);
         // if any bytes were read, form a packet and send
@@ -251,6 +262,7 @@ int CmdFileDump(char *paramstr)
             // null terminate the hex_data
             hex_data[bytes_read*2]=0;
             sprintf(downlink_data,"RamSat:%6d %s",packet_num,hex_data);
+            // 100 msec delay to prevent overrunning transmit buffer
             TMR1 = 0;
             while (TMR1 < 100*TMR1MSEC);
             

@@ -200,9 +200,6 @@ void __attribute((interrupt,shadow,no_auto_psv)) _U2RXInterrupt (void)
 }
 
 int main(void) {
-    // program flow control variables
-    long int wait;
-    
     // data structures for iMTQ (magnetorquer)
     imtq_resp_common imtq_common;       // iMTQ response from every command
     imtq_resp_state imtq_state;         // iMTQ state data
@@ -248,10 +245,8 @@ int main(void) {
     // one minute. This timer is used for watchdog resets and other periodic
     // operations, and has its period interrupt enabled.
     T2CON = 0x8038;
-    //PR3 = 0x0039;
-    //PR2 = 0x3870;
-    PR3 = 0x0000;
-    PR2 = 0xF424;
+    PR3 = 0x0039;
+    PR2 = 0x3870;
     // reset the timer
     TMR3 = 0x0000;
     TMR2 = 0x0000;
@@ -301,7 +296,11 @@ int main(void) {
     
     // Initialize the hardware components that are integrated on Pumpkin MBM
     // (serial flash memory, SD card, and real-time clock)
-    init_motherboard_components(&init_data);    
+    init_motherboard_components(&init_data);
+    
+    // Initialize the EPS watchdog timer - the system-level watchdog
+    unsigned char watchdog_minutes = 4;
+    eps_set_watchdog(watchdog_minutes);
 
     // perform the initial deployment test, and wait if the MUST_WAIT flag is set
     // includes resets for the EPS WDT during post-deploy wait period
@@ -323,6 +322,9 @@ int main(void) {
         {
             init_data.eps_antenna_on_iserror = 0;
         }
+        // wait one second to allow antenna power to stabilize
+        TMR1=0;
+        while (TMR1 < 1000*TMR1MSEC);
         // verify that PDM #8 is on (could shut itself off due to current limit)
         init_data.antenna_on_status = eps_antenna_status();
         // if PDM #8 is off, try the other power circuit (PDM #10)
@@ -340,6 +342,9 @@ int main(void) {
             init_data.ants0_deploy_status_lsb = ants_response[1];
             // arm the antenna deployment mechanism
             ants_arm();
+            // wait one second after arm
+            TMR1=0;
+            while (TMR1 < 1000*TMR1MSEC);
             // get the post-armed antenna deployment status
             ants_deploy_status(ants_response);
             init_data.ants1_deploy_status_msb = ants_response[0];
@@ -349,22 +354,16 @@ int main(void) {
             // enter a status polling loop, checking every second until
             // all antennas are showing status deployed
             ants_deploy_status(ants_response);
-            wait = 1000L * DELAYMSEC;
-            
-            // test code
-            sprintf(downlink_msg,"RamSat: entering while()");
-            he100_transmit_packet(he100_response, downlink_msg);
-            
             while ((ants_response[0] & 0x88) || (ants_response[1] & 0x88))
             {
                 TMR1 = 0;
-                while (TMR1 < wait);
+                while (TMR1 < 1000*TMR1MSEC);
                 ants_deploy_status(ants_response);
             }
             // save the final status 
             init_data.ants2_deploy_status_msb = ants_response[0];
             init_data.ants2_deploy_status_lsb = ants_response[1];
-            // retrieve and save the deployment times for each antenna
+            // save the deployment times for each antenna
             ants_time_1(ants_response);
             init_data.ants_deploy_time1_msb = ants_response[0];
             init_data.ants_deploy_time1_lsb = ants_response[1];
@@ -379,6 +378,9 @@ int main(void) {
             init_data.ants_deploy_time4_lsb = ants_response[1];
             // disarm antenna system
             ants_disarm();
+            // wait one second after disarm
+            TMR1=0;
+            while (TMR1 < 1000*TMR1MSEC);
             // capture the post-disarm deployment status
             ants_deploy_status(ants_response);
             init_data.ants3_deploy_status_msb = ants_response[0];
@@ -395,7 +397,7 @@ int main(void) {
             {
                 init_data.eps_antenna_off_iserror = 0;
             }
-            // verify that PDM #8 is on (could shut itself off due to current limit)
+            // verify that PDM #8 is off
             init_data.antenna_off_status = eps_antenna_status();
         }
     }
@@ -459,9 +461,6 @@ int main(void) {
     // set the mtm time integration parameter
     // (new value is 6, which corresponds to 80 ms)
     imtq_set_mtm_integ(&imtq_common, &imtq_integ, 6);
-    
-    // set watchdog timer (currently 32 minutes)
-    eps_set_watchdog();
     
     // variables used by the radio command and control interface
     char uplink_cmd[255];   // holds the latest uplinked command and parameters
@@ -540,10 +539,6 @@ int main(void) {
             // this prevents new uplink from interrupting the command handler
             _U2RXIE = 0;
             
-            // disable the Timer 2/3 interrupt source
-            // this prevents interference with downlink
-            _T3IE = 0;
-
             // parse the packet to look for a command
             // discard extra bytes at beginning and end of packet
             // calculate the length of entire uplink command, and the parameter part
@@ -675,9 +670,8 @@ int main(void) {
             isdata_flag = 0;
             he100_receive = 0;
 
-            // re-enable the UART2 receive and Timer 2/3 interrupts
+            // re-enable the UART2 receive interrupt
             _U2RXIE = 1;
-            _T3IE = 1;
         }
         
         // After any new uplink commands have been processed,

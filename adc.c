@@ -80,8 +80,8 @@ int adc_test_msac(void)
 // makes use of the interrupt flag, even though an interrupt routine is not enabled
 void adc_scan_all(void)
 {
-    _AD1IF = 0;   // make sure the interrupt flag is cleared
-    _ASAM = 1;    // start scan sampling (will auto sample 8 channels)
+    _AD1IF = 0;      // make sure the interrupt flag is cleared
+    _ASAM = 1;       // start scan sampling (will auto sample 8 channels)
     while (!_AD1IF); // interrupt flag is set after the last sample is converted
-    _ASAM = 0;  // stop the scan sampling. ADC1BUF0 - ADC1BUF7 are now filled
+    _ASAM = 0;       // stop the scan sampling. ADC1BUF0 - ADC1BUF7 are now filled
 }

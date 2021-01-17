@@ -156,12 +156,12 @@ void eps_reset_watchdog()
     // No response is generated for this command
 }
 
-void eps_set_watchdog()
+void eps_set_watchdog(unsigned char minutes)
 {
     // load command and parameters
     int nbytes = 2;
     command[0] = 0x21;
-    command[1] = 0x20;
+    command[1] = minutes;  // the number of minutes for watchdog timer (default is 4)
     int delay = 1;
     // send command
     eps_write_command(nbytes, delay);
