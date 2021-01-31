@@ -127,20 +127,21 @@ int he100_telemetry(unsigned char* telem_raw)
 void he100_transmit_packet(unsigned char* response, char* data)
 {
     int i;
-    unsigned char buf[260];
-    unsigned char data_len;
+    unsigned char buf[280];
+    int data_len;
     int packet_len;
     
     // Note that the downlink handling assumes the data array is a null-terminated
     // string.
     // length of data string
-    data_len = (unsigned char)strlen(data);
+    data_len = strlen(data);
     // If the string is longer than the max allowable payload length (255 bytes)
-    // then truncate the end of the string.
-    if (data_len > 255) data_len = 255;
-    
-    // packet length = header(8) + data_len + checksum(2)
-    packet_len = 8 + data_len + 2;
+    // replace with an error message
+    if (data_len > 255)
+    {
+        sprintf(data,"RamSat: he100_transmit_packet->ERROR: data packet too long (%d bytes)",data_len);
+        data_len = strlen(data);
+    }
     
     // fill the header
     buf[0]=0x48;     // 'H'
@@ -149,7 +150,8 @@ void he100_transmit_packet(unsigned char* response, char* data)
     buf[3]=0x03;     // command code (03 = transmit)
     buf[4]=0x00;     // payload size, MSB
     buf[5]=data_len; // payload size, LSB
-    // set the CRC bytes for header (skip first two bytes))
+    
+    // append 2 CRC bytes for header (skip first two bytes))
     he100_checksum(&buf[2],4);
     
     // fill the payload
@@ -157,8 +159,12 @@ void he100_transmit_packet(unsigned char* response, char* data)
     {
         buf[8+i]=data[i];
     }
-    // checksum for entire packet (skip first two bytes of header)
+    
+    // append 2 CRC bytes for entire packet (skip first two bytes of header)
     he100_checksum(&buf[2],6+data_len);
+    
+    // packet length = header(6 + 2 CRC) + data_len + 2 CRC
+    packet_len = 8 + data_len + 2;
     
     // write complete packet to UART2 for transmission
     for (i=0 ; i<packet_len ; i++)

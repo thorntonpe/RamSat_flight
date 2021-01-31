@@ -299,7 +299,7 @@ int main(void) {
     init_motherboard_components(&init_data);
     
     // Initialize the EPS watchdog timer - the system-level watchdog
-    unsigned char watchdog_minutes = 4;
+    unsigned char watchdog_minutes = 30;
     eps_set_watchdog(watchdog_minutes);
 
     // perform the initial deployment test, and wait if the MUST_WAIT flag is set
@@ -397,6 +397,9 @@ int main(void) {
             {
                 init_data.eps_antenna_off_iserror = 0;
             }
+            // wait one second after power off
+            TMR1=0;
+            while (TMR1 < 1000*TMR1MSEC);
             // verify that PDM #8 is off
             init_data.antenna_off_status = eps_antenna_status();
         }
@@ -517,6 +520,12 @@ int main(void) {
         {
             // disable the UART2 receive interrupt
             _U2RXIE = 0;
+            // report overflow
+            sprintf(downlink_msg,"RamSat: Main loop UART2 buffer overflow (clearing)");
+            he100_transmit_packet(he100_response, downlink_msg);
+            // wait one second
+            TMR1 = 0;
+            while (TMR1 < 1000L*TMR1MSEC);
             // reset the UART2 receive traps
             nhbytes = 0;
             ndbytes = 0;
@@ -525,9 +534,6 @@ int main(void) {
             he100_receive = 0;
             // clear the overflow error, which also clears the receive buffer
             U2STAbits.OERR = 0;
-            // report overflow
-            sprintf(downlink_msg,"RamSat: Main loop UART2 buffer overflow (cleared)");
-            he100_transmit_packet(he100_response, downlink_msg);
             // restart the interrupt handler
             _U2RXIE = 1;
         }
@@ -631,6 +637,10 @@ int main(void) {
                         
                         case 15: // Return current telemetry for one system 
                             cmd_err = CmdCurrentTelemetry(cmd_paramstr);
+                            break;
+                            
+                        case 16: // Delete one named file
+                            cmd_err = CmdFileDelete(cmd_paramstr);
                             break;
                         
                         case 90: // Set post-deployment timer flag (pre-flight)

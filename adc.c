@@ -29,7 +29,7 @@ int init_adc(void)
     _ALTS = 0;     // always use MUX A input multiplexer settings
     // AD1CON3
     _ADRC = 0;     // Clock derived from system clock
-    _SAMC = 0b00110; // Auto-sample time = 6 * T_AD
+    _SAMC = 0b11110; // Auto-sample time = 30 * T_AD
     _ADCS = 1;     // A/D conversion clock (2*T_CY) gives T_AD = 125 ns.
     // AD1CHS
     _CH0NB = 0;    // Negative input is VR-, as given by _VCFG (MUX B not used)

@@ -22,6 +22,7 @@ int CmdGetTelemData(char* paramstr);
 int CmdCurrentTelemetry(char* paramstr);
 int CmdCaptureImage(char* paramstr);
 int CmdCameraPower(char* paramstr);
+int CmdFileDelete(char *paramstr);
 void CmdSetPDT(void);
 void CmdResetHe100(void);
 void CmdResetPIC(void);

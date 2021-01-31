@@ -36,28 +36,26 @@
 #define B_SIZE 120            // buffer size for reading files
 #define B_SIZE2 (B_SIZE*2)+1  // buffer to hold the ascii hex equivalent
 
-// a common array for downlink data
+// common arrays for downlink data and he100 response
 char downlink_data[260];
-
-// a common array for He-100 response to transmit command
 unsigned char he100_response[8];
 
-// declare a global variable for initialization data, defined in Ramsat_flight_main.c
+// declare external global variable for initialization data, defined in Ramsat_flight_main.c
 extern init_data_type init_data;
 
-// declare a global variable for position and attitude data, defined in Ramsat_flight_main.c
+// declare external global variable for position and attitude data, defined in Ramsat_flight_main.c
 extern position_attitude_type posatt;
 
-// declare a global variable for the TLE data, defined (for now) in RamSat_flight_main.c
+// declare external global variable for the TLE data, defined (for now) in RamSat_flight_main.c
 extern tle_t tle;
 
-// declare global variables for telemetry control, defined in RamSat_flight_main.c
+// declare external global variables for telemetry control, defined in RamSat_flight_main.c
 extern telem_control_type telem_lev0;   // Level 0 control data
 extern telem_control_type telem_lev1;   // Level 1 control data
 extern telem_control_type telem_lev2;   // Level 2 control data
 
-// declare the watchdog timer interrupt flag
-extern int minute_elapsed;
+// declare external global variable for watchdog timer interrupt
+extern volatile int minute_elapsed;
 
 // A No-Op command to verify 2-way radio connection
 void CmdNoOp(void)
@@ -194,11 +192,12 @@ int CmdFileDump(char *paramstr)
     unsigned char file_data[B_SIZE];   // the latest chunk of data read from file
     unsigned char hex_data[B_SIZE2];   // the two-byte hex equivalent of the file data
     unsigned bytes_read;      // the number of bytes in most recent read
-    unsigned long total_bytes;// total bytes read for the file
     int npackets;             // number of packets that will be sent
     int packet_num;           // current packet
     int n_param;              // number of parameters passed to command
+    int n_minutes_elapsed;    // a counter for minutes elapsed during downlink
     
+    n_minutes_elapsed = 0;
     // read parameter string, return if too few parameters
     n_param = sscanf(paramstr,"%s",fname);
     if (n_param != 1)
@@ -208,8 +207,6 @@ int CmdFileDump(char *paramstr)
         return 1;
     }
     
-    //memcpy(fname,paramstr,12);
-
     // attempt to mount SD card
     sd_dat = SD_mount();
     if (!sd_dat)
@@ -224,19 +221,21 @@ int CmdFileDump(char *paramstr)
     if (!fp1)
     {
         sprintf(downlink_data,"RamSat: CmdFileDump->fopenM Error: %d",FError);
-        he100_transmit_packet(he100_response, downlink_data);                
+        he100_transmit_packet(he100_response, downlink_data); 
+        SD_umount();
         return FError;
     }
     
     // first calculate the expected number of packets, adding one for a short packet
     npackets = fp1->size/B_SIZE;
     if (fp1->size%B_SIZE) npackets++;
+    
     // send a message with filename, size, and number of packets to expect
-    sprintf(downlink_data,"RamSat: %s is open to read: Size=%ld: npackets=%u",fname,fp1->size,npackets);
+    sprintf(downlink_data,"RamSat: %s is open to read: Size=%ld: npackets=%d",fname,fp1->size,npackets);
     he100_transmit_packet(he100_response, downlink_data);
-    packet_num = 0;
-    total_bytes = 0;
+
     // loop until the file is empty
+    packet_num = 0;
     do
     {
         // check the watchdog timer interrupt, reset watchdog if needed
@@ -246,35 +245,38 @@ int CmdFileDump(char *paramstr)
         {
             eps_reset_watchdog();
             minute_elapsed = 0;
+            n_minutes_elapsed++;
         }
+        
         // read a chunk of data from the file
         bytes_read = freadM(file_data,B_SIZE,fp1);
+
         // if any bytes were read, form a packet and send
         if (bytes_read)
         {
-            // sum all bytes read
-            total_bytes += bytes_read;
             // loop through the bytes and convert to hex equivalent
             for (i=0 ; i<bytes_read ; i++)
             {
                 memcpy(&hex_data[i*2],&hex_lut[file_data[i]*2],2);
             }
-            // null terminate the hex_data
+
+            // null terminate the hex_data and form packet with header and data
             hex_data[bytes_read*2]=0;
-            sprintf(downlink_data,"RamSat:%6d %s",packet_num,hex_data);
+            sprintf(downlink_data,"RS: %4d %s",packet_num,hex_data);
+            he100_transmit_packet(he100_response, downlink_data);            
+
             // 100 msec delay to prevent overrunning transmit buffer
             TMR1 = 0;
             while (TMR1 < 100*TMR1MSEC);
             
-            he100_transmit_packet(he100_response, downlink_data);            
+            packet_num++;
         }
-        packet_num++;
     } while (bytes_read == B_SIZE);
     
     // check the packet number and write a final line to report completion
     if (packet_num == npackets)
     {
-        sprintf(downlink_data,"RamSat: %s dump complete, correct packet count: %d",fname, packet_num);
+        sprintf(downlink_data,"RamSat: %s dump complete, correct packet count: %d (%d minutes)",fname, packet_num, n_minutes_elapsed);
         he100_transmit_packet(he100_response, downlink_data);
         err = 0;
     }
@@ -282,7 +284,7 @@ int CmdFileDump(char *paramstr)
     {
         sprintf(downlink_data,"RamSat: %s dump complete, incorrect packet count: %d",fname, packet_num);
         he100_transmit_packet(he100_response, downlink_data);
-        err = 0;
+        err = 1;
     }
     
     // unmount the SD card, free memory, and return
@@ -304,7 +306,6 @@ int CmdFileDumpOnePacket(char *paramstr)
     unsigned char file_data[B_SIZE];   // the latest chunk of data read from file
     unsigned char hex_data[B_SIZE2];   // the two-byte hex equivalent of the file data
     unsigned bytes_read;      // the number of bytes in most recent read
-    unsigned long total_bytes;// total bytes read for the file
     int npackets;             // number of packets that will be sent
     int packet_num;           // current packet
     int req_pacnum;           // the index for single packet requested to downlink
@@ -334,6 +335,7 @@ int CmdFileDumpOnePacket(char *paramstr)
     {
         sprintf(downlink_data,"RamSat: CmdFileDumpOnePacket->fopenM Error: %d",FError);
         he100_transmit_packet(he100_response, downlink_data);                
+        SD_umount();
         return FError;
     }
     
@@ -343,8 +345,8 @@ int CmdFileDumpOnePacket(char *paramstr)
     // send a message with filename, size, and number of packets to expect
     sprintf(downlink_data,"RamSat: %s is open to read packet: Size=%ld: npackets=%u",fname,fp1->size,npackets);
     he100_transmit_packet(he100_response, downlink_data);
+    
     packet_num = 0;
-    total_bytes = 0;
     // loop until the file is empty
     do
     {
@@ -353,8 +355,6 @@ int CmdFileDumpOnePacket(char *paramstr)
         // if any bytes were read, form a packet and send
         if (bytes_read && packet_num == req_pacnum)
         {
-            // sum all bytes read
-            total_bytes += bytes_read;
             // loop through the bytes and convert to hex equivalent
             for (i=0 ; i<bytes_read ; i++)
             {
@@ -362,7 +362,7 @@ int CmdFileDumpOnePacket(char *paramstr)
             }
             // null terminate the hex_data
             hex_data[bytes_read*2]=0;
-            sprintf(downlink_data,"RamSat:%6d %s", packet_num, hex_data);
+            sprintf(downlink_data,"RS: %4d %s", packet_num, hex_data);
             he100_transmit_packet(he100_response, downlink_data); 
             break;
         }
@@ -378,7 +378,7 @@ int CmdFileDumpOnePacket(char *paramstr)
     }
     else
     {
-        sprintf(downlink_data,"RamSat: %s dump complete, packet %d NOT found",fname, req_pacnum);
+        sprintf(downlink_data,"RamSat: %s dump complete, packet %d NOT found %d",fname, req_pacnum, packet_num);
         he100_transmit_packet(he100_response, downlink_data);
         err = 0;
     }
@@ -1015,7 +1015,9 @@ int CmdCaptureImage(char* paramstr)
             fcloseM(fp);
             sprintf(downlink_data,"RamSat: CmdCaptureImage->wrote file %s, size=%ld bytes",
                     fname, totb);
-            he100_transmit_packet(he100_response, downlink_data);                
+            he100_transmit_packet(he100_response, downlink_data);
+            TMR1=0;
+            while(TMR1 < 1000 * TMR1MSEC);
         }
         
         // open a file in write mode, for image data output from camera 2
@@ -1058,12 +1060,13 @@ int CmdCaptureImage(char* paramstr)
             fcloseM(fp);
             sprintf(downlink_data,"RamSat: CmdCaptureImage->wrote file %s, size=%ld bytes",
                     fname, totb);
-            he100_transmit_packet(he100_response, downlink_data);                
+            he100_transmit_packet(he100_response, downlink_data);
+            TMR1=0;
+            while(TMR1 < 1000 * TMR1MSEC);
         }
+        // unmount the SD card
+        SD_umount();
     }
-    // unmount the SD card
-    SD_umount();
-    
     return err;
 }
     
@@ -1105,6 +1108,53 @@ int CmdCameraPower(char* paramstr)
     return err;
 }
 
+// Delete a named file from SD card
+int CmdFileDelete(char *paramstr)
+{
+    int err = 0;
+    MEDIA * sd_dat;    // pointer to SD card data structure
+    char fname[13];
+    fname[12]=0;
+    int n_param;              // number of parameters passed to command
+    
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%s",fname);
+    if (n_param != 1)
+    {
+        sprintf(downlink_data,"RamSat: CmdFileDelete->wrong n_param: %d",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
+    // attempt to mount SD card
+    sd_dat = SD_mount();
+    if (!sd_dat)
+    {
+        sprintf(downlink_data,"RamSat: CmdFileDelete->SD_mount Error: %d",FError);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return FError;
+    }
+    
+    // delete specified file 
+    err = fdeleteM(fname, "d");
+    
+    // unmount SD card
+    SD_umount();
+    
+    if (err)
+    {
+        sprintf(downlink_data,"RamSat: CmdFileDelete->fdeleteM Error: %d",FError);
+        he100_transmit_packet(he100_response, downlink_data);                
+    }
+    else
+    {
+        sprintf(downlink_data,"RamSat: %s deleted",fname);
+        he100_transmit_packet(he100_response, downlink_data);                
+    }
+    
+    return err;
+}
+    
 // Set the MUST_WAIT flag for post-deployment timer, in SFM
 void CmdSetPDT(void)
 {

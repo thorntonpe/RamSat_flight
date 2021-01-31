@@ -103,7 +103,7 @@ int SendSDCmd(int c, LBA a, int crc)
 
 // Initialize the SD card. There are multiple steps, several of which can
 // generate errors. The return value indicates card ready, or which step
-// is returning an error:
+// is returning an error. Slot is powered on return if successful, unpowered otherwise.
 // Return   Indicates
 // ------   ---------
 //  0x00    No errors, card ready for use
@@ -121,12 +121,18 @@ int SD_init(void)
     int i,r;
     int c8_1, c8_2, c8_3, c8_4;
     int c58_1, c58_2, c58_3, c58_4;
+
+    // 0. During initialization, lower SPI speed to 250 kHz
+    SPI1STATbits.SPIEN = 0;      // temporarily disable the peripheral
+    SPI1CON1bits.SPRE  = 0b111;  // pre2 = 1:1
+    SPI1CON1bits.PPRE  = 0b00;   // pre1 = 64:1
+    SPI1STATbits.SPIROV = 0;     // clear overflow buffer
+    SPI1STATbits.SPIEN = 1;      // re-enable the peripheral
     
     // 1. power up the SD slot (-ON_SD, active low), and wait one second.
     _RE4 = 0;
-    unsigned long wait = 1000L * DELAYMSEC;
     TMR1 = 0;
-    while (TMR1 < wait);
+    while (TMR1 < 1000L * TMR1MSEC);
     
     // 2. send 80 clock cycles, required to begin device initialization.
     // Guidance from others is to have the device de-selected during this
@@ -141,15 +147,26 @@ int SD_init(void)
         write_spi1(0xff);
     
     // 3. send CMD0 (RESET) to enter SPI mode
+    // NB: the SendSDCmd() routines leaves the CS_SD=0 to allow further reads.
+    // Setting high and clocking in one more dummy byte via write_spi1() is the
+    // correct way to disable the SD card after SendSDCmd().
     r = SendSDCmd(0, 0, 0x94); 
     CS_SD = 1; write_spi1(0xff);
     if (r != 1)
+    {
+        _RE4 = 1;    // turn off power to SD card
         return 0x03;
+    }
     
     // 4. send CMD8 to check version (1 or 2)
     r = SendSDCmd(8, 0x1aa, 0x86);
     if (r > 1)
+    {
+        CS_SD = 1; write_spi1(0xff);
+        _RE4 = 1;
         return 0x04;
+    }
+    
     // 5. CMD8 recognized if r = 0 or 1. So it's a v2.0 card. Read the next
     // four bytes of the response (it's an R7 5-byte response if v2)
     c8_1 = write_spi1(0xff);  // should be 0x00
@@ -158,12 +175,20 @@ int SD_init(void)
     c8_4 = write_spi1(0xff);  // should be 0xaa (test pattern)
     CS_SD = 1; write_spi1(0xff);
     if (c8_3 != 1 || c8_4 != 0xaa)
+    {
+        _RE4 = 1;
         return 0x05;
+    }
     
     // 6. CMD58, check OCR (operation condition register)
     r = SendSDCmd(58, 0, 0);
     if (r > 1)
+    {
+        CS_SD = 1; write_spi1(0xff);
+        _RE4 = 1;
         return 0x06;
+    }
+    
     // 7. CMD58 recognized, no error flags. Read the next 4 bytes
     // as an R3 response
     c58_1 = write_spi1(0xff);
@@ -179,23 +204,40 @@ int SD_init(void)
         r = SendSDCmd(55, 0, 0);
         CS_SD = 1; write_spi1(0xff);
         if (r > 1)
+        {
+            _RE4 = 1;
             return 0x08;
+        }
         
         // send ACMD41, and check for errors
         r = SendSDCmd(41, 0, 0);
         CS_SD = 1; write_spi1(0xff);
         if (r > 1)
+        {
+            _RE4 = 1;
             return 0x09;
+        }
+        
         // check if exited idle state (return value 0)
         if (!r) break;  // card is ready!
     } while (--i > 0);
+    
+    // timeout indicator - card not ready
     if (i == 0)
-        return 0xff;  // timeout indicator - card not ready
+    {
+        _RE4 = 1;
+        return 0xff;
+    }
     
     // 10. Send CMD58, to see if this is an SD, or SDHC card
     r = SendSDCmd(58, 0, 0);
     if (r > 0)
+    {
+        CS_SD = 1; write_spi1(0xff);
+        _RE4 = 1;
         return 0x0a;
+    }
+    
     // 11. CMD58 recognized, no error flags. Read the next 4 bytes as an R3 response
     c58_1 = write_spi1(0xff);
     c58_2 = write_spi1(0xff);
@@ -203,7 +245,10 @@ int SD_init(void)
     c58_4 = write_spi1(0xff);
     CS_SD = 1; write_spi1(0xff);
     if (c58_1 != 0x80)  // high capacity card - not supported
+    {
+        _RE4 = 1;
         return 0x0b;
+    }
     
     // 12. Initialization complete, can now increase SPI speed to 4MHz
     SPI1STATbits.SPIEN = 0;      // temporarily disable the peripheral
@@ -211,7 +256,7 @@ int SD_init(void)
     SPI1CON1bits.PPRE  = 0b10;   // pre1 = 4:1
     SPI1STATbits.SPIEN = 1;      // re-enable the peripheral
     
-    return 0; // return value 0 indicates card is ready
+    return 0; // return value 0 indicates card is ready and slot is powered
 }
 
 // read a single 512-byte sector at a given LBA (logic block address)
@@ -290,16 +335,11 @@ MEDIA * SD_mount( void)
     int i;
     unsigned char *buffer;
     
-    // 0. init the I/Os
-    // Skip this here - already done in main()
-
-    // 1. check if the card is in the slot 
-    // skip this -assuming card always installed
-
     // 2. initialize the card    
     if ( SD_init())
     { 
-        FError = FE_CANNOT_INIT;
+        // Note that more error info could be returned from SD_init(), if desired
+        FError = FE_CANNOT_INIT;  
         return NULL;
     }
 
@@ -409,19 +449,21 @@ MEDIA * SD_mount( void)
     //       = (tot sectors - sys sectors )/sxc
     D->maxcls = (psize - (D->data - firsts)) / D->sxc;
     
-    // 18. free up the temporary buffer
+    // 18. free the temporary buffer
     free( buffer);
     return D;
 
 } // mount
 
 //-------------------------------------------------------------
-// umount    initializes a MEDIA structure for file IO access
+// umount    de-initializes a MEDIA structure for file IO access
+// also switch off power to the SD card slot
 //
 void SD_umount( void)
 { 
     free( D);
     D = NULL;
+    _RE4 = 1;
 } // umount
 
 //-------------------------------------------------------------
@@ -830,6 +872,8 @@ unsigned freadM( void * dest, unsigned size, MFILE *fp)
                     break;
             }
             // 2.2.2 load a sector of data
+            TMR1=0;
+            while(TMR1 < 100*TMR1MSEC);
             if ( !ReadDATA( fp))
                 break;
 
