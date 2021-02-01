@@ -294,6 +294,122 @@ int CmdFileDump(char *paramstr)
     return err;            
 }
 
+// Downlink the contents of a named file in a series of numbered packets
+// user specifies the first and last packet numbers in a range to downlink
+int CmdFileDumpRange(char *paramstr)
+{
+    int err = 0;
+    MEDIA * sd_dat;    // pointer to SD card data structure
+    MFILE * fp1;       // pointer to file data structure
+    int i;
+    char fname[13];
+    fname[12]=0;
+    int first_packet, last_packet;     // user-specified range of packets (base-zero)
+    unsigned char file_data[B_SIZE];   // the latest chunk of data read from file
+    unsigned char hex_data[B_SIZE2];   // the two-byte hex equivalent of the file data
+    unsigned bytes_read;      // the number of bytes in most recent read
+    int npackets;             // number of packets that will be sent
+    int packet_num;           // current packet
+    int n_param;              // number of parameters passed to command
+    int n_minutes_elapsed;    // a counter for minutes elapsed during downlink
+    
+    n_minutes_elapsed = 0;
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%s %d %d",fname, &first_packet, &last_packet);
+    if (n_param != 3)
+    {
+        sprintf(downlink_data,"RamSat: CmdFileDump->wrong n_param: %d",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
+    // attempt to mount SD card
+    sd_dat = SD_mount();
+    if (!sd_dat)
+    {
+        sprintf(downlink_data,"RamSat: CmdFileDump->SD_mount Error: %d",FError);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return FError;
+    }
+    
+    // open specified file for reading
+    fp1 = fopenM(fname, "r");
+    if (!fp1)
+    {
+        sprintf(downlink_data,"RamSat: CmdFileDump->fopenM Error: %d",FError);
+        he100_transmit_packet(he100_response, downlink_data); 
+        SD_umount();
+        return FError;
+    }
+    
+    // first calculate the expected number of packets, adding one for a short packet
+    npackets = fp1->size/B_SIZE;
+    if (fp1->size%B_SIZE) npackets++;
+    
+    // send a message with filename, size, and number of packets to expect
+    sprintf(downlink_data,"RamSat: %s is open to read: Size=%ld: npackets=%d",fname,fp1->size,npackets);
+    he100_transmit_packet(he100_response, downlink_data);
+
+    // loop until the file is empty
+    packet_num = 0;
+    do
+    {
+        // check the watchdog timer interrupt, reset watchdog if needed
+        // required here because the image dump can take longer than the normal
+        // watchdog period (4 minutes)
+        if (minute_elapsed)
+        {
+            eps_reset_watchdog();
+            minute_elapsed = 0;
+            n_minutes_elapsed++;
+        }
+        
+        // read a chunk of data from the file
+        bytes_read = freadM(file_data,B_SIZE,fp1);
+
+        // if any bytes were read, form a packet and send
+        if (bytes_read && (packet_num >= first_packet) && (packet_num <= last_packet))
+        {
+            // loop through the bytes and convert to hex equivalent
+            for (i=0 ; i<bytes_read ; i++)
+            {
+                memcpy(&hex_data[i*2],&hex_lut[file_data[i]*2],2);
+            }
+
+            // null terminate the hex_data and form packet with header and data
+            hex_data[bytes_read*2]=0;
+            sprintf(downlink_data,"RS: %4d %s",packet_num,hex_data);
+            he100_transmit_packet(he100_response, downlink_data);            
+
+            // 100 msec delay to prevent overrunning transmit buffer
+            TMR1 = 0;
+            while (TMR1 < 100*TMR1MSEC);
+            
+            packet_num++;
+        }
+    } while (bytes_read == B_SIZE);
+    
+    // check the packet number and write a final line to report completion
+    if (packet_num == npackets)
+    {
+        sprintf(downlink_data,"RamSat: %s dump complete, correct packet count: %d (%d minutes)",fname, packet_num, n_minutes_elapsed);
+        he100_transmit_packet(he100_response, downlink_data);
+        err = 0;
+    }
+    else
+    {
+        sprintf(downlink_data,"RamSat: %s dump complete, incorrect packet count: %d",fname, packet_num);
+        he100_transmit_packet(he100_response, downlink_data);
+        err = 1;
+    }
+    
+    // unmount the SD card, free memory, and return
+    SD_umount();
+    free (fp1->buffer);
+    free(fp1);
+    return err;            
+}
+
 // Downlink a single numbered packet from a named file
 int CmdFileDumpOnePacket(char *paramstr)
 {
@@ -870,7 +986,7 @@ int CmdCurrentTelemetry(char* paramstr)
             sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving startup telemetry, index %d", index);
             he100_transmit_packet(he100_response, downlink_data);
             // telemetry is already in init_data structure from startup sequence
-            sprintf(downlink_data,"Init Telem: %ld %ld %ld %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d",
+            sprintf(downlink_data,"Init Telem: %ld %ld %ld %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %.2f %s %s",
                     init_data.u2br_actual, init_data.i2c1br, init_data.i2c2br,
                     init_data.adc_iserror, init_data.sfm_iserror, init_data.sd_iserror,
                     init_data.rtc_flags_iserror, init_data.rtc_flags2_iserror, init_data.rtc_clear_iserror,
@@ -884,7 +1000,8 @@ int CmdCurrentTelemetry(char* paramstr)
                     init_data.ants_deploy_time1_msb, init_data.ants_deploy_time1_lsb,
                     init_data.ants_deploy_time2_msb, init_data.ants_deploy_time2_lsb,
                     init_data.ants_deploy_time3_msb, init_data.ants_deploy_time3_lsb,
-                    init_data.ants_deploy_time4_msb, init_data.ants_deploy_time4_lsb
+                    init_data.ants_deploy_time4_msb, init_data.ants_deploy_time4_lsb,
+                    init_data.batv, init_data.rtc_halt_time, init_data.rtc_init_time
                     );
             he100_transmit_packet(he100_response, downlink_data);
             break;

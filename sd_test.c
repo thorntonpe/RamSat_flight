@@ -98,6 +98,7 @@ int test_sd_write_read_delete(void)
     fp1 = fopenM(fname, "w");
     if (!fp1)
     {
+        SD_umount();
         err = FError;
         return err;
     }
@@ -108,6 +109,9 @@ int test_sd_write_read_delete(void)
     nbw = fwriteM(test_text_w, ntrans, fp1);
     if (nbw != ntrans)
     {
+        fcloseM(fp1);
+        fdeleteM(fname, "d");
+        SD_umount();
         err = 1;
         return err;
     }
@@ -119,6 +123,7 @@ int test_sd_write_read_delete(void)
     fp1 = fopenM(fname, "r");
     if (!fp1)
     {
+        SD_umount();
         err = FError;
         return err;
     }
@@ -127,6 +132,8 @@ int test_sd_write_read_delete(void)
     nbr = freadM(test_text_r, ntrans, fp1);
     if (nbr != ntrans)
     {
+        fcloseM(fp1);
+        fdeleteM(fname, "d");
         err = 1;
         return err;
     }
@@ -134,14 +141,9 @@ int test_sd_write_read_delete(void)
     // compare the write and read strings
     err = memcmp(test_text_w, test_text_r, ntrans);
 
-    // close the file
+    // close file, then delete
     fcloseM(fp1);
-    
-    // delete the file
-    if (!err)
-    {
-        err = fdeleteM(fname, "d");
-    }
+    fdeleteM(fname, "d");
     
     // Unmount the SD card
     SD_umount();

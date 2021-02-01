@@ -255,8 +255,6 @@ int main(void) {
     _T3IF = 0;
     _T3IE = 1;
     
-    char msg[128];      // character string for messages to user via COM port
-    
     // Set desired baud rates for UART2 (He-100 radio or USB interfaces)
 #ifdef HE100
     init_data.u2br_request = 9600;   // UART2 desired baud rate for radio
@@ -269,7 +267,7 @@ int main(void) {
 #endif
 
     // set desired clock speeds for SPI peripherals
-    init_data.spi1_fsck = 250000;  // SD card, initial speed (250kHz) **check re-mount**
+    init_data.spi1_fsck = 250000;  // SD card, initial speed (250kHz) 
     init_data.spi2_fsck = 4000000; // Arducams (4MHz)
     init_data.spi3_fsck = 4000000; // Serial Flash Memory (4MHz)
 
@@ -299,7 +297,7 @@ int main(void) {
     init_motherboard_components(&init_data);
     
     // Initialize the EPS watchdog timer - the system-level watchdog
-    unsigned char watchdog_minutes = 30;
+    unsigned char watchdog_minutes = 2;
     eps_set_watchdog(watchdog_minutes);
 
     // perform the initial deployment test, and wait if the MUST_WAIT flag is set
@@ -403,10 +401,16 @@ int main(void) {
             // verify that PDM #8 is off
             init_data.antenna_off_status = eps_antenna_status();
         }
+        // get initial battery voltage for startup telemetry
+        init_data.batv = eps_get_batv();
+        
+        // write the initial data structure to SFM
+        
     }
 
     // Retrieve battery telemetry and downlink startup message
     float batv = eps_get_batv();
+    int size_init_data = sizeof(init_data);
     sprintf(downlink_msg,"RamSat: Startup BatV = %.2f",batv);
     he100_transmit_packet(he100_response, downlink_msg);
     
@@ -419,6 +423,10 @@ int main(void) {
     {
         sprintf(downlink_msg,"RamSat: Startup UART2 buffer overflow error!");
         he100_transmit_packet(he100_response, downlink_msg);
+        // wait one second
+        TMR1 = 0;
+        while (TMR1 < 1000L*TMR1MSEC);
+        // clear buffer overflow
         U2STAbits.OERR = 0;
     }
 
@@ -641,6 +649,10 @@ int main(void) {
                             
                         case 16: // Delete one named file
                             cmd_err = CmdFileDelete(cmd_paramstr);
+                            break;
+                            
+                        case 17: // Downlink a range of packets from one file
+                            cmd_err = CmdFileDumpRange(cmd_paramstr);
                             break;
                         
                         case 90: // Set post-deployment timer flag (pre-flight)

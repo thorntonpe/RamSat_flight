@@ -76,6 +76,9 @@ void init_motherboard_components(init_data_type *init_data_p)
         init_data_p->rtc_clear_iserror = rtc_clear_flags(init_data_p->rtc_flags);
         init_data_p->rtc_flags2_iserror = rtc_read_flags(&(init_data_p->rtc_flags2));
     }
+    // once flags are cleared and clock has started, 
+    // read the clock registers to get the datetime for startup
+    get_isodatetime(init_data_p->rtc_init_time);
 }
 
 // perform the initial deployment test, and wait a set number of seconds if

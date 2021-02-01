@@ -33,6 +33,7 @@ typedef struct
     int  rtc_flags;         // initial HALT (bit 2), STOP (bit 1), and OF (bit 0) flags
     int  rtc_flags2;        // RTC flags after attempted clear
     char rtc_halt_time[26]; // ISO 8601 datetime at previous RTC halt
+    char rtc_init_time[26]; // ISO 8601 datetime at startup
     int  pdt_status;        // 0 = didn't wait, 1 = waited, 2 = unrecognized flag
     int  pdt_flag;          // the flag value read from serial flash memory on initialization
     unsigned char eps_antenna_on_iserror;  // error flag for EPS power on command to antenna (switch #8)
@@ -55,6 +56,7 @@ typedef struct
     unsigned char ants_deploy_time3_lsb;   // LSB of antenna 3 deployment time (x 50ms)
     unsigned char ants_deploy_time4_msb;   // MSB of antenna 4 deployment time (x 50ms)
     unsigned char ants_deploy_time4_lsb;   // LSB of antenna 4 deployment time (x 50ms)
+    float batv;             // battery voltage at startup
 } init_data_type;
 
 // function prototypes

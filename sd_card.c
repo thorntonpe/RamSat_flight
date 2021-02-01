@@ -269,7 +269,7 @@ int SD_read_sector(LBA a, unsigned char *p)
     if (r == 0) // command accepted
     {
         // wait for a response
-        i=10000;
+        i=25000;
         do {
             r=write_spi1(0xff);
             if (r == DATA_START) break;
