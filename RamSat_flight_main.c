@@ -654,6 +654,10 @@ int main(void) {
                         case 17: // Downlink a range of packets from one file
                             cmd_err = CmdFileDumpRange(cmd_paramstr);
                             break;
+                            
+                        case 18: // Start the detumble function of iMTQ
+                            cmd_err = CmdStartDetumble(cmd_paramstr);
+                            break;
                         
                         case 90: // Set post-deployment timer flag (pre-flight)
                             CmdSetPDT();

@@ -1271,6 +1271,99 @@ int CmdFileDelete(char *paramstr)
     
     return err;
 }
+
+// begin a detumble operation with iMTQ, specifying a number of seconds,
+// a flag for whether or not to report results during the detumble, and the
+// report frequency. Send 0 0 for the second and third parameter for no reporting
+int CmdStartDetumble(char *paramstr)
+{
+    int err = 0;
+    int n_param;              // number of parameters passed to command
+    unsigned short nseconds;  // number of seconds to operate detumble
+    int do_report;            // flag to downlink interim detumble data reports
+    int report_freq;          // number of seconds between downlink reports
+    int seconds_elapsed;      // detumble timer
+    int report_count;         // current report number
+    float batv, bati;         // additional battery telemetry during detumble
+    imtq_resp_common imtq_common;       // iMTQ response from every command
+    imtq_resp_detumble imtq_detumble;   // iMTQ detumble data
+    
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%hu %d %d",&nseconds, &do_report, &report_freq);
+    if (n_param != 3)
+    {
+        sprintf(downlink_data,"RamSat: CmdStartDetumble->wrong n_param: %d",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
+    // send iMTQ command to start the B-Dot detumble operation
+    imtq_start_detumble(nseconds, &imtq_common);
+    
+    // check the response and report status
+    if (imtq_common.cc == 0x09 && imtq_common.stat == 0x80)
+    {
+        // good iMTQ response
+        sprintf(downlink_data,"RamSat: Detumbling for %d seconds...",nseconds);
+        he100_transmit_packet(he100_response, downlink_data);
+        
+        // if user requested reporting, gather and downlink detumble data every second
+        if (do_report)
+        {
+            report_count = 0;
+            seconds_elapsed = 0;
+            do {
+                // wait one second, increment timer
+                TMR1=0;
+                while(TMR1 < 1000L*TMR1MSEC);
+                seconds_elapsed++;
+
+                // check if report period
+                if (seconds_elapsed % report_freq == 0)
+                {
+                    // read detumble data
+                    imtq_get_detumble_data(&imtq_common, &imtq_detumble);
+
+                    // check response and downlink if no error
+                    if (imtq_common.cc == 0x48 && imtq_common.stat == 0x80)
+                    {
+                        sprintf(downlink_data,"RamSat: DetumbleReport %d Cal(X,Y,Z)=(%ld,%ld,%ld) Filt(X,Y,Z)=(%ld,%ld,%ld) BDot(X,Y,Z)=(%ld,%ld,%ld)",
+                                seconds_elapsed, 
+                                imtq_detumble.cal_x, imtq_detumble.cal_y, imtq_detumble.cal_z,
+                                imtq_detumble.filt_x, imtq_detumble.filt_y, imtq_detumble.filt_z,
+                                imtq_detumble.bdot_x, imtq_detumble.bdot_y, imtq_detumble.bdot_z);
+                        he100_transmit_packet(he100_response, downlink_data);
+                        sprintf(downlink_data,"RamSat: DetumbleReport %d Dip(X,Y,Z)=(%d,%d,%d) CmdCur(X,Y,Z)=(%d,%d,%d) ActCur(X,Y,Z)=(%d,%d,%d)",
+                                seconds_elapsed,
+                                imtq_detumble.dip_x, imtq_detumble.dip_y, imtq_detumble.dip_z,
+                                imtq_detumble.ccur_x, imtq_detumble.ccur_y, imtq_detumble.ccur_z,
+                                imtq_detumble.cur_x, imtq_detumble.cur_y, imtq_detumble.cur_z);
+                        he100_transmit_packet(he100_response, downlink_data);
+                        batv = bat_get_batv();
+                        bati = bat_get_bati();
+                        sprintf(downlink_data,"RamSat: DetumbleReport %d Batv=%.2f Bati=%.2f",seconds_elapsed,batv, bati);
+                        he100_transmit_packet(he100_response, downlink_data);
+                    }
+                    else
+                    {
+                        sprintf(downlink_data,"RamSat: DetumbleReport->iMTQ Error: cc=0x%02x, stat=0x%02x",
+                                imtq_common.cc,imtq_common.stat);
+                        he100_transmit_packet(he100_response, downlink_data);
+                    }
+                } // end report period
+            } while (seconds_elapsed < nseconds);
+        } // end do_report
+    } // end good response to start detumble
+    else
+    {
+        // error in iMTQ response
+        sprintf(downlink_data,"RamSat: CmdStartDetumble->iMTQ Error: cc=0x%02x, stat=0x%02x",
+                imtq_common.cc,imtq_common.stat);
+        he100_transmit_packet(he100_response, downlink_data);
+        err = 1;
+    }
+    return err;
+}
     
 // Set the MUST_WAIT flag for post-deployment timer, in SFM
 void CmdSetPDT(void)

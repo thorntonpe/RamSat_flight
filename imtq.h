@@ -70,6 +70,29 @@ typedef struct
     signed short temp_z;    // Z coil temperature
 } imtq_resp_selftest;
 
+// Detumble data 
+typedef struct
+{
+    signed long cal_x;      // calibrated X magnetic field (1e-9 T)
+    signed long cal_y;      // calibrated Y magnetic field (1e-9 T)
+    signed long cal_z;      // calibrated Z magnetic field (1e-9 T)
+    signed long filt_x;     // filtered X magnetic field (1e-9 T)
+    signed long filt_y;     // filtered Y magnetic field (1e-9 T)
+    signed long filt_z;     // filtered Z magnetic field (1e-9 T)
+    signed long bdot_x;     // B-dot X (1e-9 T s-1)
+    signed long bdot_y;     // B-dot Y (1e-9 T s-1)
+    signed long bdot_z;     // B-dot Z (1e-9 T s-1)
+    signed short dip_x;     // commanded dipole X (1e-4 Am-2)
+    signed short dip_y;     // commanded dipole Y (1e-4 Am-2)
+    signed short dip_z;     // commanded dipole Z (1e-4 Am-2)
+    signed short ccur_x;    // commanded current X (1e-4 A)
+    signed short ccur_y;    // commanded current Y (1e-4 A)
+    signed short ccur_z;    // commanded current Z (1e-4 A)
+    signed short cur_x;     // measured current X (1e-4 A)
+    signed short cur_y;     // measured current Y (1e-4 A)
+    signed short cur_z;     // measured current Z (1e-4 A)
+} imtq_resp_detumble;
+
 void write_imtq_command(int nbytes);
 void write_imtq_command_noack(int nbytes);
 void read_imtq_response(int nbytes);
@@ -92,4 +115,7 @@ void imtq_get_selftest(imtq_resp_common* imtq_common_init,
         imtq_resp_selftest* imtq_selftest_fina);
 void imtq_start_actpwm(imtq_resp_common* imtq_common, signed short pwm_x, signed short pwm_y,
         signed short pwm_z, unsigned short dur);
+void imtq_start_detumble(unsigned short nseconds, imtq_resp_common* imtq_common);
+void imtq_get_detumble_data(imtq_resp_common* imtq_common, imtq_resp_detumble* imtq_detumble);
+
 

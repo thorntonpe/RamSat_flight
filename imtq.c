@@ -473,3 +473,62 @@ void imtq_start_actpwm(imtq_resp_common* imtq_common, signed short pwm_x, signed
     imtq_common->cc = response[0];
     imtq_common->stat = response[1];
 }
+
+// start B-Dot detumble operation
+void imtq_start_detumble(unsigned short nseconds, imtq_resp_common* imtq_common)
+{
+    int cmd_id = 0x09;                // command id
+    int cmd_nbytes = 3;               // number of bytes in command
+    int rsp_nbytes = 2;               // number of bytes in response
+    
+    // fill the command bytes
+    command[0] = cmd_id;
+    command[1] = nseconds & 0x00ff;
+    command[2] = (nseconds & 0xff00) >> 8;
+    
+    // send the command
+    write_imtq_command(cmd_nbytes);
+    // read the response
+    read_imtq_response(rsp_nbytes);
+    // translate response bytes into response struct
+    imtq_common->cc = response[0];
+    imtq_common->stat = response[1];
+}
+
+// get current detumble data
+void imtq_get_detumble_data(imtq_resp_common* imtq_common, imtq_resp_detumble* imtq_detumble)
+{
+    int cmd_id = 0x48;                // command id
+    int cmd_nbytes = 1;               // number of bytes in command
+    int rsp_nbytes = 56;             // number of bytes in response
+
+    // fill the command bytes
+    command[0] = cmd_id;
+    // send the command
+    write_imtq_command(cmd_nbytes);
+    // read the response
+    read_imtq_response(rsp_nbytes);
+    
+    // translate response bytes into response structs
+    imtq_common->cc = response[0];
+    imtq_common->stat = response[1];
+    extract_slong(2,  &imtq_detumble->cal_x);
+    extract_slong(6,  &imtq_detumble->cal_y);
+    extract_slong(10, &imtq_detumble->cal_z);
+    extract_slong(14, &imtq_detumble->filt_x);
+    extract_slong(18, &imtq_detumble->filt_y);
+    extract_slong(22, &imtq_detumble->filt_z);
+    extract_slong(26, &imtq_detumble->bdot_x);
+    extract_slong(30, &imtq_detumble->bdot_y);
+    extract_slong(34, &imtq_detumble->bdot_z);
+    extract_sshort(38, &imtq_detumble->dip_x);
+    extract_sshort(40, &imtq_detumble->dip_y);
+    extract_sshort(42, &imtq_detumble->dip_z);
+    extract_sshort(44, &imtq_detumble->ccur_x);
+    extract_sshort(46, &imtq_detumble->ccur_y);
+    extract_sshort(48, &imtq_detumble->ccur_z);
+    extract_sshort(50, &imtq_detumble->cur_x);
+    extract_sshort(52, &imtq_detumble->cur_y);
+    extract_sshort(54, &imtq_detumble->cur_z);
+}
+
