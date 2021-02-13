@@ -7,14 +7,107 @@
 */
 
 #include "xc.h"
+#include "clock.h"
 #include "datetime.h"
 #include "eps_bat.h"
 #include "sfm.h"
 #include "telemetry.h"
+#include "adc.h"
+#include "imtq.h"
+#include "ants.h"
 #include <stdio.h>
 #include <string.h>
 
 #define PAGES_PER_SECTOR 256    // number of 256-byte pages per 64KB sector on SFM
+
+void telem_form_beacon(char *beacon_str)
+{
+    // variables to store telemetry data
+    char isodatetime[30];
+    float batv, bati;
+    int bat_ischarging;
+    float eps_bcr1v, eps_bcr1ai, eps_bcr1bi;
+    float eps_bcr2v, eps_bcr2ai, eps_bcr2bi;
+    float eps_bcr3v, eps_bcr3bi;
+    float eps_bcroutv, eps_bcrouti;
+    float eps_batbusv, eps_batbusi;
+    float eps_33busv, eps_33busi;
+    float eps_5busv, eps_5busi;
+    float eps_mbt, bat_mbt, bat_dbt;
+    float eps_sapxt, eps_sanxt, eps_sapyt, eps_sanyt, eps_sanzt;
+    int ss_px1, ss_px2, ss_nx1, ss_nx2, ss_py1, ss_py2, ss_ny1, ss_ny2;
+    imtq_resp_common imtq_common;       // iMTQ response from every command
+    imtq_resp_mtm imtq_calib_mtm;       // iMTQ calibrated magnetometer data
+    unsigned char ants_response[2];    // holds response from antenna commands
+    
+    // gather all beacon telemetry elements
+    get_isodatetime(isodatetime);
+    batv = bat_get_batv();
+    bati = bat_get_bati();
+    bat_ischarging = bat_get_batischarging();
+    eps_bcr1v = eps_get_bcr1v();
+    eps_bcr1ai = eps_get_bcr1ia();
+    eps_bcr1bi = eps_get_bcr1ib();
+    eps_bcr2v = eps_get_bcr2v();
+    eps_bcr2ai = eps_get_bcr2ia();
+    eps_bcr2bi = eps_get_bcr2ib();
+    eps_bcr3v = eps_get_bcr3v();
+    eps_bcr3bi = eps_get_bcr3ib();
+    eps_bcroutv = eps_get_bcroutv();
+    eps_bcrouti = eps_get_bcrouti();
+    eps_batbusv = eps_get_batv();
+    eps_batbusi = eps_get_bati();
+    eps_33busv = eps_get_bus33v();
+    eps_33busi = eps_get_bus33i();
+    eps_5busv = eps_get_bus5v();
+    eps_5busi = eps_get_bus5i();
+    eps_mbt = eps_get_mbt();
+    bat_mbt = bat_get_mbt();
+    bat_dbt = bat_get_dbt();
+    eps_sanxt = eps_get_sa1at();
+    eps_sapxt = eps_get_sa1bt();
+    eps_sanyt = eps_get_sa2at();
+    eps_sapyt = eps_get_sa2bt();
+    eps_sanzt = eps_get_sa3bt();
+    // fill ADC buffer with sun sensor data
+    adc_scan_all();
+    ss_px1 = ADC1BUF4;
+    ss_px2 = ADC1BUF0;
+    ss_nx1 = ADC1BUF6;
+    ss_nx2 = ADC1BUF2;
+    ss_py1 = ADC1BUF3;
+    ss_py2 = ADC1BUF7;
+    ss_ny1 = ADC1BUF5;
+    ss_ny2 = ADC1BUF1;
+    // start the iMTQ magnetometer measurement
+    imtq_start_mtm(&imtq_common);
+    // delay for MTM integration
+    TMR1 = 0;
+    while (TMR1 <= 82 * TMR1MSEC);
+    // get the calibrated MTM data
+    imtq_get_calib_mtm(&imtq_common, &imtq_calib_mtm);
+    // power on the antenna
+    eps_antenna_on();
+    // a delay to let the antenna circuitry initialize
+    TMR1 = 0;
+    while (TMR1 < 100*TMR1MSEC);
+    // read antenna deployment status
+    ants_deploy_status(ants_response);
+    // power off the antenna
+    eps_antenna_off();
+    
+    // format message string
+    // see google drive speadsheet for beacon message details
+    sprintf(beacon_str,"RamSat: %s,%3.0f,%4.0f,%1d,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%3.0f,%4.0f,%3.0f,%4.0f,%3.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4d,%4d,%4d,%4d,%4d,%4d,%4d,%4d,%6.0ld,%6.0ld,%6.0ld,%02x%02x",
+            isodatetime, batv*100.0, bati, bat_ischarging, eps_bcr1v*100.0, eps_bcr1ai, eps_bcr1bi,
+            eps_bcr2v*100.0, eps_bcr2ai, eps_bcr2bi, eps_bcr3v*100.0, eps_bcr3bi, eps_bcroutv*100.0, eps_bcrouti,
+            eps_batbusv*100.0, eps_batbusi, eps_33busv*100.0, eps_33busi, eps_5busv*100.0, eps_5busi,
+            eps_mbt*10.0, bat_mbt*10.0, bat_dbt*10.0, 
+            eps_sapxt*10.0, eps_sanxt*10.0, eps_sapyt*10.0, eps_sanyt*10.0, eps_sanzt*10.0,
+            ss_px1, ss_px2, ss_nx1, ss_nx2, ss_py1, ss_py2, ss_ny1, ss_ny2,
+            imtq_calib_mtm.x, imtq_calib_mtm.y, imtq_calib_mtm.z, 
+            ants_response[0], ants_response[1]);
+}
 
 void telem_gather_lev0(telem_control_type* c)
 {

@@ -26,7 +26,7 @@ static int bat_add_r = (BAT_ADDR << 1) | 0b1;  // Bat address with read flag set
 
 // common memory space used by all raw (byte-level) commands and responses
 static unsigned char command[3];           // maximum size for any command
-static unsigned char response[2];          // maximum size for any response
+static unsigned char response[8];          // maximum size for any response
 
 // low-level routine to write a command to EPS device
 void eps_write_command(int nbytes, int delay)
@@ -410,6 +410,23 @@ float eps_get_bcr3ib()
     return (float)adc * 0.971043376 + 5.230754201;
 }
 
+float eps_get_bcrouti()
+{
+    // load command and parameters
+    int nbytes = 3;
+    command[0] = 0x10;
+    command[1] = 0xE2;
+    command[2] = 0x84;
+    int delay = 5;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    // convert 2-byte (10-bit) ADC output to float (mA)
+    int adc = (response[0] << 8) | response[1];
+    return (float)adc * 14.45318313 - 11.89241354;
+}
+
 float eps_get_bati()
 {
     // load command and parameters
@@ -526,70 +543,222 @@ float eps_get_mbt()
     eps_read_response(2);
     // convert 2-byte (10-bit) ADC output to float (mA)
     int adc = (response[0] << 8) | response[1];
-    return ((float)adc * 0.372434) - 273.15;
+    return ((float)adc * 0.379528154) - 288.923017;
+}
+
+// temperature sensor on solar array 1a (-X)
+float eps_get_sa1at()
+{
+    // load command and parameters
+    int nbytes = 3;
+    command[0] = 0x10;
+    command[1] = 0xE1;
+    command[2] = 0x18;
+    int delay = 5;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    // convert 2-byte (10-bit) ADC output to float (mA)
+    int adc = (response[0] << 8) | response[1];
+    return ((float)adc * 0.4963) - 273.15;
+}
+
+// temperature sensor on solar array 1b (+X)
+float eps_get_sa1bt()
+{
+    // load command and parameters
+    int nbytes = 3;
+    command[0] = 0x10;
+    command[1] = 0xE1;
+    command[2] = 0x19;
+    int delay = 5;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    // convert 2-byte (10-bit) ADC output to float (mA)
+    int adc = (response[0] << 8) | response[1];
+    return ((float)adc * 0.4963) - 273.15;
+}
+
+// temperature sensor on solar array 2a (-Y)
+float eps_get_sa2at()
+{
+    // load command and parameters
+    int nbytes = 3;
+    command[0] = 0x10;
+    command[1] = 0xE1;
+    command[2] = 0x28;
+    int delay = 5;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    // convert 2-byte (10-bit) ADC output to float (mA)
+    int adc = (response[0] << 8) | response[1];
+    return ((float)adc * 0.4963) - 273.15;
+}
+
+// temperature sensor on solar array 2b (+Y)
+float eps_get_sa2bt()
+{
+    // load command and parameters
+    int nbytes = 3;
+    command[0] = 0x10;
+    command[1] = 0xE1;
+    command[2] = 0x29;
+    int delay = 5;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    // convert 2-byte (10-bit) ADC output to float (mA)
+    int adc = (response[0] << 8) | response[1];
+    return ((float)adc * 0.4963) - 273.15;
+}
+
+// temperature sensor on solar array 3b (-Z)
+float eps_get_sa3bt()
+{
+    // load command and parameters
+    int nbytes = 3;
+    command[0] = 0x10;
+    command[1] = 0xE1;
+    command[2] = 0x39;
+    int delay = 5;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    // convert 2-byte (10-bit) ADC output to float (mA)
+    int adc = (response[0] << 8) | response[1];
+    return ((float)adc * 0.4963) - 273.15;
+}
+
+// turn off PDM initial state
+void eps_set_pdm_all_off()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x41;
+    command[1] = 0x00;
+    int delay = 0;
+    // send command
+    eps_write_command(nbytes, delay);
+}
+
+// turn off all PDMs
+void eps_set_pdm_initial_off(int pdm)
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x53;
+    command[1] = pdm;
+    int delay = 200;
+    // send command
+    eps_write_command(nbytes, delay);
+}
+
+// Get initial state of all PDMs (4 byte response, see table 11-12 in EPS manual  
+int eps_get_pdm_initial()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x44;
+    command[1] = 0x00;
+    int delay = 40;
+    unsigned int output;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(4);
+    // last two bytes have the bit-wise data
+    output = (response[2] << 8) | response[3]; 
+    return output;    
+}
+
+// Get expected state of all PDMs (4 byte response, see table 11-12 in EPS manual  
+int eps_get_pdm_expected()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x43;
+    command[1] = 0x00;
+    int delay = 1;
+    unsigned int output;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(4);
+    // last two bytes have the bit-wise data
+    output = (response[2] << 8) | response[3]; 
+    return output;    
+}
+
+// Get actual state of all PDMs (4 byte response, see table 11-12 in EPS manual  
+int eps_get_pdm_actual()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x42;
+    command[1] = 0x00;
+    int delay = 40;
+    unsigned int output;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(4);
+    // last two bytes have the bit-wise data
+    output = (response[2] << 8) | response[3]; 
+    return output;    
 }
 
 // Turn on PDM Switch #7, 5V power to Arducams
-unsigned char eps_cameras_on()
+void eps_cameras_on()
 {
     // load command and parameters
     int nbytes = 2;
     command[0] = 0x50;
     command[1] = 0x07;
-    int delay = 1;
+    int delay = 0;
     // send command
     eps_write_command(nbytes, delay);
-    // read response
-    eps_read_response(2);
-    // the useful status byte is the second byte returned
-    return response[1];    
 }
 
 // Turn off PDM Switch #7, 5V power to Arducams
-unsigned char eps_cameras_off()
+void eps_cameras_off()
 {
     // load command and parameters
     int nbytes = 2;
     command[0] = 0x51;
     command[1] = 0x07;
-    int delay = 1;
+    int delay = 0;
     // send command
     eps_write_command(nbytes, delay);
-    // read response
-    eps_read_response(2);
-    // the useful status byte is the second byte returned
-    return response[1];    
 }
 // Turn on PDM Switch #8, 3.3V power to Antenna
-unsigned char eps_antenna_on()
+void eps_antenna_on()
 {
     // load command and parameters
     int nbytes = 2;
     command[0] = 0x50;
     command[1] = 0x08;
-    int delay = 1;
+    int delay = 0;
     // send command
     eps_write_command(nbytes, delay);
-    // read response
-    eps_read_response(2);
-    // the useful status byte is the second byte returned
-    return response[1];    
 }
 
 // Turn off PDM Switch #8, 3.3V power to Antenna
-unsigned char eps_antenna_off()
+void eps_antenna_off()
 {
     // load command and parameters
     int nbytes = 2;
     command[0] = 0x51;
     command[1] = 0x08;
-    int delay = 1;
+    int delay = 0;
     // send command
     eps_write_command(nbytes, delay);
-    // read response
-    eps_read_response(2);
-    // the useful status byte is the second byte returned
-    return response[1];    
 }
 
 // Check status of PDM Switch #8, 3.3V power to Antenna (1=on, 0=off))
@@ -599,7 +768,7 @@ unsigned char eps_antenna_status()
     int nbytes = 2;
     command[0] = 0x54;
     command[1] = 0x08;
-    int delay = 1;
+    int delay = 2;
     // send command
     eps_write_command(nbytes, delay);
     // read response

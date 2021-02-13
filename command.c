@@ -38,6 +38,7 @@
 
 // common arrays for downlink data and he100 response
 char downlink_data[260];
+char downlink_data2[260];
 unsigned char he100_response[8];
 
 // declare external global variable for initialization data, defined in Ramsat_flight_main.c
@@ -318,7 +319,7 @@ int CmdFileDumpRange(char *paramstr)
     n_param = sscanf(paramstr,"%s %d %d",fname, &first_packet, &last_packet);
     if (n_param != 3)
     {
-        sprintf(downlink_data,"RamSat: CmdFileDump->wrong n_param: %d",n_param);
+        sprintf(downlink_data,"RamSat: CmdFileDumpRange->wrong n_param: %d",n_param);
         he100_transmit_packet(he100_response, downlink_data);                
         return 1;
     }
@@ -327,7 +328,7 @@ int CmdFileDumpRange(char *paramstr)
     sd_dat = SD_mount();
     if (!sd_dat)
     {
-        sprintf(downlink_data,"RamSat: CmdFileDump->SD_mount Error: %d",FError);
+        sprintf(downlink_data,"RamSat: CmdFileDumpRange->SD_mount Error: %d",FError);
         he100_transmit_packet(he100_response, downlink_data);                
         return FError;
     }
@@ -336,7 +337,7 @@ int CmdFileDumpRange(char *paramstr)
     fp1 = fopenM(fname, "r");
     if (!fp1)
     {
-        sprintf(downlink_data,"RamSat: CmdFileDump->fopenM Error: %d",FError);
+        sprintf(downlink_data,"RamSat: CmdFileDumpRange->fopenM Error: %d",FError);
         he100_transmit_packet(he100_response, downlink_data); 
         SD_umount();
         return FError;
@@ -347,7 +348,8 @@ int CmdFileDumpRange(char *paramstr)
     if (fp1->size%B_SIZE) npackets++;
     
     // send a message with filename, size, and number of packets to expect
-    sprintf(downlink_data,"RamSat: %s is open to read: Size=%ld: npackets=%d",fname,fp1->size,npackets);
+    sprintf(downlink_data,"RamSat: %s is open to read: Size=%ld: npackets=%d first_packet=%d last_packet=%d",
+            fname,fp1->size,npackets,first_packet,last_packet);
     he100_transmit_packet(he100_response, downlink_data);
 
     // loop until the file is empty
@@ -375,7 +377,7 @@ int CmdFileDumpRange(char *paramstr)
             {
                 memcpy(&hex_data[i*2],&hex_lut[file_data[i]*2],2);
             }
-
+            
             // null terminate the hex_data and form packet with header and data
             hex_data[bytes_read*2]=0;
             sprintf(downlink_data,"RS: %4d %s",packet_num,hex_data);
@@ -385,20 +387,26 @@ int CmdFileDumpRange(char *paramstr)
             TMR1 = 0;
             while (TMR1 < 100*TMR1MSEC);
             
-            packet_num++;
+            //for (k=0 ; k<10 ; k++)
+            //{
+            //    TMR1=0;
+            //    while(TMR1 < 1000*TMR1MSEC);
+            //}
         }
+        if (packet_num == last_packet) break;
+        packet_num++;
     } while (bytes_read == B_SIZE);
     
     // check the packet number and write a final line to report completion
-    if (packet_num == npackets)
+    if (packet_num == last_packet)
     {
-        sprintf(downlink_data,"RamSat: %s dump complete, correct packet count: %d (%d minutes)",fname, packet_num, n_minutes_elapsed);
+        sprintf(downlink_data,"RamSat: %s dump complete, correct last_packet: %d (%d minutes)",fname, packet_num, n_minutes_elapsed);
         he100_transmit_packet(he100_response, downlink_data);
         err = 0;
     }
     else
     {
-        sprintf(downlink_data,"RamSat: %s dump complete, incorrect packet count: %d",fname, packet_num);
+        sprintf(downlink_data,"RamSat: %s dump complete, incorrect last_packet: %d",fname, packet_num);
         he100_transmit_packet(he100_response, downlink_data);
         err = 1;
     }
@@ -873,7 +881,8 @@ int CmdCurrentTelemetry(char* paramstr)
     int err = 0;
     int n_param;
     int index = 0;
-    unsigned char bat_status, eps_status, eps_power_status;
+    unsigned char bat_status, eps_status;
+    int pdm_initial, pdm_expected, pdm_actual;
     int ischarging, bat_nbr, bat_nar, bat_nmr;
     float batv, bati, bat_mbt, bat_dbt;
     float eps_bcr1v, eps_bcr2v, eps_bcr3v, eps_bcroutv;
@@ -1028,7 +1037,7 @@ int CmdCurrentTelemetry(char* paramstr)
             TMR1 = 0;
             while (TMR1 < 1000*TMR1MSEC);
             // power on the antenna
-            eps_power_status = eps_antenna_on();
+            eps_antenna_on();
             // a delay to let the antenna circuitry initialize
             TMR1 = 0;
             while (TMR1 < 100*TMR1MSEC);
@@ -1036,8 +1045,41 @@ int CmdCurrentTelemetry(char* paramstr)
             unsigned char ants_response[2]; // holds response from antenna commands
             ants_deploy_status(ants_response);
             // power off the antenna
-            eps_power_status = eps_antenna_off();
+            eps_antenna_off();
             sprintf(downlink_data,"Antenna Telem: 0x%02x 0x%02x", ants_response[0],ants_response[1]);
+            he100_transmit_packet(he100_response, downlink_data);
+            break;
+            
+        case 8: // PDM switch telemetry (subset of EPS)
+            // response header
+            sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving PDM telemetry, index %d", index);
+            he100_transmit_packet(he100_response, downlink_data);
+            // a delay to let the transmitter complete before getting telemetry
+            TMR1 = 0;
+            while (TMR1 < 1000*TMR1MSEC);
+            
+            // test code to set initial state
+            //eps_set_pdm_initial_off(1);
+            //eps_set_pdm_initial_off(2);
+            //eps_set_pdm_initial_off(3);
+            //eps_set_pdm_initial_off(4);
+            //eps_set_pdm_initial_off(5);
+            //eps_set_pdm_initial_off(6);
+            //eps_set_pdm_initial_off(7);
+            //eps_set_pdm_initial_off(8);
+            //eps_set_pdm_initial_off(9);
+            //eps_set_pdm_initial_off(10);
+            
+            eps_set_pdm_all_off();
+            
+            // get the initial state of all PDM switches (on power-up)
+            pdm_initial = eps_get_pdm_initial();
+            // get the expected state of all PDM switches
+            pdm_expected = eps_get_pdm_expected();
+            // get the actual state of all PDM switches
+            pdm_actual = eps_get_pdm_actual();
+            sprintf(downlink_data,"PDM Telem: Initial=%d, Expected=%d, Actual=%d",
+                    pdm_initial, pdm_expected, pdm_actual);
             he100_transmit_packet(he100_response, downlink_data);
             break;
             
@@ -1193,7 +1235,6 @@ int CmdCameraPower(char* paramstr)
 {
     int err = 0;
     int state = 0;
-    unsigned char pwr_response;
     int init_response;
     
     // get the state parameter
@@ -1202,16 +1243,15 @@ int CmdCameraPower(char* paramstr)
     switch(state)
     {
         case 0:
-            pwr_response = eps_cameras_off();
-            err = pwr_response;
+            eps_cameras_off();
             sprintf(downlink_data,"RamSat: CmdCameraPower->OFF, Successful.");
             he100_transmit_packet(he100_response, downlink_data);
             break;
             
         case 1:
-            pwr_response = eps_cameras_on();
+            eps_cameras_on();
             init_response = init_arducam();
-            err = (pwr_response || init_response);
+            err = init_response;
             sprintf(downlink_data,"RamSat: CmdCameraPower->ON & INIT, Successful.");
             he100_transmit_packet(he100_response, downlink_data);
             break;

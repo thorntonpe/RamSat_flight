@@ -262,14 +262,15 @@ int SD_init(void)
 // read a single 512-byte sector at a given LBA (logic block address)
 int SD_read_sector(LBA a, unsigned char *p)
 {
-    int i, r;
+    unsigned int i;
+    int r;
     
     // The a<<9 converts LBA to byte value (multiplies by 512)
     r = SendSDCmd(READ_SINGLE, (a<<9), 0);
     if (r == 0) // command accepted
     {
         // wait for a response
-        i=25000;
+        i=40000;
         do {
             r=write_spi1(0xff);
             if (r == DATA_START) break;
@@ -872,8 +873,6 @@ unsigned freadM( void * dest, unsigned size, MFILE *fp)
                     break;
             }
             // 2.2.2 load a sector of data
-            TMR1=0;
-            while(TMR1 < 100*TMR1MSEC);
             if ( !ReadDATA( fp))
                 break;
 

@@ -21,6 +21,7 @@ typedef struct
 } telem_control_type;
 
 // function prototypes 
+void telem_form_beacon(char *beacon_str);
 void telem_gather_lev0(telem_control_type* c);
 void telem_gather_lev1(telem_control_type* c);
 

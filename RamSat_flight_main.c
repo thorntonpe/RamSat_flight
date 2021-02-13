@@ -22,6 +22,7 @@
 #include "sgp4.h"
 #include "wmm.h"
 #include "position_attitude.h"
+#include "sun_geometry.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -308,18 +309,9 @@ int main(void) {
     // pdt_status of 1 indicates that a deploy wait was completed during init_wait()
     if (init_data.pdt_status == 1)
     {
-        unsigned char status_byte;
         // turn on 3.3V power to the antenna via switched PDM #8 on EPS
-        status_byte = eps_antenna_on();
-        // check for error condition from power-on command
-        if (status_byte == 0xff)
-        {
-            init_data.eps_antenna_on_iserror = eps_get_last_error();
-        }
-        else
-        {
-            init_data.eps_antenna_on_iserror = 0;
-        }
+        eps_antenna_on();
+        init_data.eps_antenna_on_iserror = 0;
         // wait one second to allow antenna power to stabilize
         TMR1=0;
         while (TMR1 < 1000*TMR1MSEC);
@@ -385,16 +377,8 @@ int main(void) {
             init_data.ants3_deploy_status_lsb = ants_response[1];
             
             // turn off 3.3V power to the antenna via switched PDM #8 on EPS
-            status_byte = eps_antenna_off();
-            // check for error condition from power-on command
-            if (status_byte == 0xff)
-            {
-                init_data.eps_antenna_off_iserror = eps_get_last_error();
-            }
-            else
-            {
-                init_data.eps_antenna_off_iserror = 0;
-            }
+            eps_antenna_off();
+            init_data.eps_antenna_off_iserror = 0;
             // wait one second after power off
             TMR1=0;
             while (TMR1 < 1000*TMR1MSEC);
@@ -492,16 +476,34 @@ int main(void) {
     while (1)
     {
         // If the 1-minute flag is set (from Timer2/3 interrupt)
-        // cycle through timed events (watchdog reset, telemetry gathering)
+        // cycle through timed events (watchdog reset, beacon, telemetry gathering)
         if (minute_elapsed)
         {
-            // Reset watchdog timers on each minute boundary
+            // Reset watchdog timer on each minute boundary
             eps_reset_watchdog();
+            
+            // RamSat beacon message: broadcast once each minute
+            // build beacon string
+            telem_form_beacon(downlink_msg);
+            // disable UART2 interrupt
+            _U2RXIE = 0;
+            // broadcast beacon message            
+            he100_transmit_packet(he100_response, downlink_msg);
+            // reset the UART2 receive traps
+            nhbytes = 0;
+            ndbytes = 0;
+            ishead_flag = 0;
+            isdata_flag = 0;
+            he100_receive = 0;
+            // clear any overflow error, which also clears the receive buffer
+            U2STAbits.OERR = 0;
+            // restart the interrupt handler
+            _U2RXIE = 1;
             
             // track elapsed time for different levels of telemetry
             telem_lev0_elapsed++;
             telem_lev1_elapsed++;
-            
+                        
             // check if any telemetry levels are triggered
             if (telem_lev0_elapsed == telem_lev0.record_period)
             {
@@ -764,7 +766,9 @@ int main(void) {
                 // get the calibrated MTM data
                 imtq_get_calib_mtm(&imtq_common, &imtq_calib_mtm);
                 
-                // add the sun angle calculations here...
+                // sun geometry calculations
+                double sunx_eci, suny_eci, sunz_eci;
+                sun_ECI(jd, &sunx_eci, &suny_eci, &sunz_eci);
                 
                 // once all orbital and attitude calculations are complete
                 // all angles are converted from radians to degrees
