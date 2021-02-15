@@ -40,6 +40,7 @@ void eps_set_pdm_all_off();
 int eps_get_pdm_initial();
 int eps_get_pdm_expected();
 int eps_get_pdm_actual();
+void eps_allpdm_off();
 void eps_cameras_on();
 void eps_cameras_off();
 void eps_antenna_on();

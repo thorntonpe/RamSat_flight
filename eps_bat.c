@@ -152,8 +152,9 @@ void eps_reset_watchdog()
     int delay = 1;
     // send command
     eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
     
-    // No response is generated for this command
 }
 
 void eps_set_watchdog(unsigned char minutes)
@@ -165,8 +166,8 @@ void eps_set_watchdog(unsigned char minutes)
     int delay = 1;
     // send command
     eps_write_command(nbytes, delay);
-    
-    // No response is generated for this command
+    // read response
+    eps_read_response(2);
 }
 
 float eps_get_bcr1v()
@@ -618,24 +619,6 @@ float eps_get_sa2bt()
     return ((float)adc * 0.4963) - 273.15;
 }
 
-// temperature sensor on solar array 3b (-Z)
-float eps_get_sa3bt()
-{
-    // load command and parameters
-    int nbytes = 3;
-    command[0] = 0x10;
-    command[1] = 0xE1;
-    command[2] = 0x39;
-    int delay = 5;
-    // send command
-    eps_write_command(nbytes, delay);
-    // read response
-    eps_read_response(2);
-    // convert 2-byte (10-bit) ADC output to float (mA)
-    int adc = (response[0] << 8) | response[1];
-    return ((float)adc * 0.4963) - 273.15;
-}
-
 // turn off PDM initial state
 void eps_set_pdm_all_off()
 {
@@ -646,6 +629,8 @@ void eps_set_pdm_all_off()
     int delay = 0;
     // send command
     eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
 }
 
 // turn off all PDMs
@@ -658,6 +643,8 @@ void eps_set_pdm_initial_off(int pdm)
     int delay = 200;
     // send command
     eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
 }
 
 // Get initial state of all PDMs (4 byte response, see table 11-12 in EPS manual  
@@ -724,6 +711,8 @@ void eps_cameras_on()
     int delay = 0;
     // send command
     eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
 }
 
 // Turn off PDM Switch #7, 5V power to Arducams
@@ -736,7 +725,89 @@ void eps_cameras_off()
     int delay = 0;
     // send command
     eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
 }
+
+// Turn off each PDM switch, one at a time
+void eps_allpdm_off()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x51;
+
+    //switch #1
+    command[1] = 0x01;
+    int delay = 0;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+
+    //switch #2
+    command[1] = 0x02;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    
+    //switch #3
+    command[1] = 0x03;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    
+    //switch #4
+    command[1] = 0x04;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    
+    //switch #5
+    command[1] = 0x05;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    
+    //switch #6
+    command[1] = 0x06;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    
+    //switch #7
+    command[1] = 0x07;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    
+    //switch #8
+    command[1] = 0x08;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    
+    //switch #9
+    command[1] = 0x09;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    
+    //switch #10
+    command[1] = 0x0a;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+}
+
 // Turn on PDM Switch #8, 3.3V power to Antenna
 void eps_antenna_on()
 {
@@ -747,6 +818,8 @@ void eps_antenna_on()
     int delay = 0;
     // send command
     eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
 }
 
 // Turn off PDM Switch #8, 3.3V power to Antenna
@@ -759,6 +832,8 @@ void eps_antenna_off()
     int delay = 0;
     // send command
     eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
 }
 
 // Check status of PDM Switch #8, 3.3V power to Antenna (1=on, 0=off))
@@ -803,6 +878,8 @@ void eps_batvbus_reset()
     int delay = 1;
     // send command
     eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
 }
 
 // battery telemetry: status byte

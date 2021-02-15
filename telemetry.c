@@ -15,10 +15,17 @@
 #include "adc.h"
 #include "imtq.h"
 #include "ants.h"
+#include "position_attitude.h"
 #include <stdio.h>
 #include <string.h>
 
 #define PAGES_PER_SECTOR 256    // number of 256-byte pages per 64KB sector on SFM
+
+// declare external global variable for position and attitude data, defined in Ramsat_flight_main.c
+extern position_attitude_type posatt;
+
+// external variable for current beacon message, defined in Ramsat_flight_main.c
+extern char beacon_msg[260];
 
 void telem_form_beacon(char *beacon_str)
 {
@@ -34,7 +41,7 @@ void telem_form_beacon(char *beacon_str)
     float eps_33busv, eps_33busi;
     float eps_5busv, eps_5busi;
     float eps_mbt, bat_mbt, bat_dbt;
-    float eps_sapxt, eps_sanxt, eps_sapyt, eps_sanyt, eps_sanzt;
+    float eps_sapxt, eps_sanxt, eps_sapyt, eps_sanyt;
     int ss_px1, ss_px2, ss_nx1, ss_nx2, ss_py1, ss_py2, ss_ny1, ss_ny2;
     imtq_resp_common imtq_common;       // iMTQ response from every command
     imtq_resp_mtm imtq_calib_mtm;       // iMTQ calibrated magnetometer data
@@ -68,7 +75,6 @@ void telem_form_beacon(char *beacon_str)
     eps_sapxt = eps_get_sa1bt();
     eps_sanyt = eps_get_sa2at();
     eps_sapyt = eps_get_sa2bt();
-    eps_sanzt = eps_get_sa3bt();
     // fill ADC buffer with sun sensor data
     adc_scan_all();
     ss_px1 = ADC1BUF4;
@@ -98,15 +104,16 @@ void telem_form_beacon(char *beacon_str)
     
     // format message string
     // see google drive speadsheet for beacon message details
-    sprintf(beacon_str,"RamSat: %s,%3.0f,%4.0f,%1d,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%3.0f,%4.0f,%3.0f,%4.0f,%3.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4d,%4d,%4d,%4d,%4d,%4d,%4d,%4d,%6.0ld,%6.0ld,%6.0ld,%02x%02x",
+    sprintf(beacon_str,"RSBeac:,%s,%3.0f,%4.0f,%1d,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%3.0f,%4.0f,%3.0f,%4.0f,%3.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4.0f,%4d,%4d,%4d,%4d,%4d,%4d,%4d,%4d,%6.0ld,%6.0ld,%6.0ld,%02x%02x,%6.0lf,%6.0lf,%4.0lf",
             isodatetime, batv*100.0, bati, bat_ischarging, eps_bcr1v*100.0, eps_bcr1ai, eps_bcr1bi,
             eps_bcr2v*100.0, eps_bcr2ai, eps_bcr2bi, eps_bcr3v*100.0, eps_bcr3bi, eps_bcroutv*100.0, eps_bcrouti,
             eps_batbusv*100.0, eps_batbusi, eps_33busv*100.0, eps_33busi, eps_5busv*100.0, eps_5busi,
             eps_mbt*10.0, bat_mbt*10.0, bat_dbt*10.0, 
-            eps_sapxt*10.0, eps_sanxt*10.0, eps_sapyt*10.0, eps_sanyt*10.0, eps_sanzt*10.0,
+            eps_sapxt*10.0, eps_sanxt*10.0, eps_sapyt*10.0, eps_sanyt*10.0,
             ss_px1, ss_px2, ss_nx1, ss_nx2, ss_py1, ss_py2, ss_ny1, ss_ny2,
             imtq_calib_mtm.x, imtq_calib_mtm.y, imtq_calib_mtm.z, 
-            ants_response[0], ants_response[1]);
+            ants_response[0], ants_response[1],
+            posatt.lon*100.0, posatt.cor_lat*100.0, posatt.elev*10.0);
 }
 
 void telem_gather_lev0(telem_control_type* c)
@@ -199,9 +206,7 @@ void telem_gather_lev1(telem_control_type* c)
     // In the following, a block is a group of data pages written between timestamp pages
     
     char isodatetime[30];
-    char new_str[16];
     int len;
-    float scaled_value;
     int pagerec_count;   // the current record count on current page
     int blockpage_count; // the current page count in current block
     int block_count;     // the current block count
@@ -260,11 +265,7 @@ void telem_gather_lev1(telem_control_type* c)
     }
     
     // gather telemetry, format, and concatenate to page string
-    scaled_value = bat_get_bati();
-    // current is reported in mA, so divide by ten to get a 3-digit value
-    // that can capture currents greater than 1 A: e.g. 101 would be 1010 mA
-    sprintf(new_str,",%3.0lf",scaled_value / 10.0);
-    strcat(c->pagedata,new_str);
+    strcat(c->pagedata,beacon_msg);
     // increment the telemetry counter
     c->record_count = c->record_count + 1;
     

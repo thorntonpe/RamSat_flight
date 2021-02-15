@@ -23,6 +23,7 @@
 #include "wmm.h"
 #include "position_attitude.h"
 #include "sun_geometry.h"
+#include "triad.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -35,8 +36,13 @@
 
 // global variable for initialization data
 init_data_type init_data; // data structure for peripheral initialization
+
 // global variable for the current TLE
 tle_t tle;
+
+//global variable for the current beacon
+char beacon_msg[260];
+
 // global variables for telemetry control
 telem_control_type telem_lev0;   // Level 0 control data
 telem_control_type telem_lev1;   // Level 1 control data
@@ -226,6 +232,11 @@ int main(void) {
     double lst;         // local sidereal time
     double b_locx, b_locy, b_locz;  // magnetic field in local tangential coords
     double Bx, By, Bz;  // Magnetic field in ECI coordinates
+    double mbody[3];    // unit vector magnetic field in body frame
+    double sbody[3];    // unit vector sun in body frame
+    double mearth[3];   // unit vector magnetic field in ECI frame
+    double searth[3];   // unit vector sun in ECI frame
+    double mbodymag, sbodymag, mearthmag, searthmag;
     double coslat,sinlat,coslst,sinlst; // for intermediate calculations
     double t1;          // temporary variable
     
@@ -300,7 +311,10 @@ int main(void) {
     // Initialize the EPS watchdog timer - the system-level watchdog
     unsigned char watchdog_minutes = 2;
     eps_set_watchdog(watchdog_minutes);
-
+    
+    // make sure all the PDM switches are off
+    eps_allpdm_off();
+    
     // perform the initial deployment test, and wait if the MUST_WAIT flag is set
     // includes resets for the EPS WDT during post-deploy wait period
     init_wait(&init_data);
@@ -432,10 +446,10 @@ int main(void) {
     
     // Level 1 telemetry control
     telem_lev1.record_period = 1;     // 1-minute intervals per record
-    telem_lev1.rec_per_page = 60;     // one page for each hour
-    telem_lev1.page_per_block = 24;   // 24 pages (hours) between timestamps
+    telem_lev1.rec_per_page = 1;     // one page for each hour
+    telem_lev1.page_per_block = 60;   // 24 pages (hours) between timestamps
     telem_lev1.first_sector = 11;      // first sector to use for this telemetry level
-    telem_lev1.num_sectors = 10;      // number of sectors to use for this telemetry level
+    telem_lev1.num_sectors = 1;      // number of sectors to use for this telemetry level
     telem_lev1.record_count = 0;      // record counter
     telem_lev1.page_count = 0;        // page counter (includes timestamp pages)
     telem_lev1.first_timestamp[0]=0;  // initialize timestamps as null
@@ -484,11 +498,11 @@ int main(void) {
             
             // RamSat beacon message: broadcast once each minute
             // build beacon string
-            telem_form_beacon(downlink_msg);
+            telem_form_beacon(beacon_msg);
             // disable UART2 interrupt
             _U2RXIE = 0;
             // broadcast beacon message            
-            he100_transmit_packet(he100_response, downlink_msg);
+            he100_transmit_packet(he100_response, beacon_msg);
             // reset the UART2 receive traps
             nhbytes = 0;
             ndbytes = 0;
@@ -735,11 +749,16 @@ int main(void) {
             if (!sgp4_ret)
             {
                 // estimate satellite's groundtrack longitude, latitude, and orbit elevation
-                // lat and lon are in radians, elev is meters above mean radius
+                // lat and lon are in radians, elev is km above mean radius
                 // lst (local sidereal time) is in [units]
                 sat_lon_lat_elev(jd, pos, &lon, &lat, &elev, &lst);
                 // latitude corrected for ellipsoid (also in radians))
                 cor_lat = atan(tan(lat)/f2);
+                
+                // hardwired lon, lat, elev at RMS
+                lon = -1.47085; // 84.27333 W
+                lat = 0.62852; // 36.01167 N
+                elev = 0.259; // 850 feet AMSL
                 
                 // estimate Earth's magnetic field vector at this location
                 // returns values in local tangential coordinates
@@ -756,6 +775,20 @@ int main(void) {
                 Bx = t1*coslst - b_locy*sinlst;
                 By = t1*sinlst + b_locy*coslst;
                 Bz = b_locz*sinlat + b_locx*coslat;
+                // normalize the ECI magnetic field vector
+                mearthmag = sqrt(Bx*Bx + By*By + Bz*Bz);
+                if (mearthmag)
+                {
+                    mearth[0] = Bx/mearthmag;
+                    mearth[1] = By/mearthmag;
+                    mearth[2] = Bz/mearthmag;
+                }
+                else
+                {
+                    mearth[0] = 0.0;
+                    mearth[1] = 0.0;
+                    mearth[2] = 0.0;
+                }
                 
                 // gather MTM data in satellite frame coordinates
                 // start the MTM measurement
@@ -765,10 +798,68 @@ int main(void) {
                 while (TMR1 <= 82 * TMR1MSEC);
                 // get the calibrated MTM data
                 imtq_get_calib_mtm(&imtq_common, &imtq_calib_mtm);
+                // normalize the body magnetic field vector
+                mbodymag = sqrt(imtq_calib_mtm.x*imtq_calib_mtm.x + 
+                        imtq_calib_mtm.y*imtq_calib_mtm.y +
+                        imtq_calib_mtm.z*imtq_calib_mtm.z);
+                if (mbodymag)
+                {
+                    mbody[0] = imtq_calib_mtm.x/mbodymag;
+                    mbody[1] = imtq_calib_mtm.y/mbodymag;
+                    mbody[2] = imtq_calib_mtm.z/mbodymag;
+                }
+                else
+                {
+                    mbody[0] = 0.0;
+                    mbody[1] = 0.0;
+                    mbody[2] = 0.0;
+                }
                 
                 // sun geometry calculations
                 double sunx_eci, suny_eci, sunz_eci;
                 sun_ECI(jd, &sunx_eci, &suny_eci, &sunz_eci);
+                // normalize the ECI sun vector
+                searthmag = sqrt(sunx_eci*sunx_eci + suny_eci*suny_eci + sunz_eci*sunz_eci);
+                if (searthmag)
+                {
+                    searth[0]=sunx_eci/searthmag;
+                    searth[1]=suny_eci/searthmag;
+                    searth[2]=sunz_eci/searthmag;
+                }
+                else
+                {
+                    searth[0] = 0.0;
+                    searth[1] = 0.0;
+                    searth[2] = 0.0;
+                }
+                
+                // normalize the sun vector in frame coordinates
+                double sx=-0.8285;
+                double sy=0.5522;
+                double sz=-0.0955;
+                sbodymag=sqrt(sx*sx + sy*sy + sz*sz);
+                if (sbodymag)
+                {
+                    sbody[0]=sx/sbodymag;
+                    sbody[1]=sy/sbodymag;
+                    sbody[2]=sz/sbodymag;
+                }
+                else
+                {
+                    sbody[0] = 0.0;
+                    sbody[1] = 0.0;
+                    sbody[2] = 0.0;
+                }
+                double q0,q1,q2,q3,dq0,dq1,dq2,dq3;
+                int triad_err = triad(mbody,sbody,mearth,searth,&q0,&q1,&q2,&q3,&dq0,&dq1,&dq2,&dq3);
+                
+                // test code packet for mearth, searth, mbody
+                //_U2RXIE = 0;
+                //sprintf(downlink_msg,"RamSat: mearth= %.3lf, %.3lf, %.3lf searth= %.3lf, %.3lf, %.3lf mbody= %.3lf, %.3lf, %.3lf",
+                //        mearth[0], mearth[1], mearth[2], searth[0], searth[1], searth[2], mbody[0], mbody[1], mbody[2]);
+                //he100_transmit_packet(he100_response, downlink_msg);
+                //isGoodTLE = 0;
+                //_U2RXIE = 1;
                 
                 // once all orbital and attitude calculations are complete
                 // all angles are converted from radians to degrees
@@ -780,6 +871,7 @@ int main(void) {
                 posatt.lon = lon * (180.0/pi);
                 posatt.lat = lat * (180.0/pi);
                 posatt.cor_lat = cor_lat * (180.0/pi);
+                posatt.elev = elev;
                 posatt.lst = lst * (180.0/pi);
                 posatt.B_locx = b_locx;
                 posatt.B_locy = b_locy;
@@ -790,6 +882,22 @@ int main(void) {
                 posatt.B_fx = imtq_calib_mtm.x;
                 posatt.B_fy = imtq_calib_mtm.y;
                 posatt.B_fz = imtq_calib_mtm.z;
+                posatt.b_x = mearth[0];
+                posatt.b_y = mearth[1];
+                posatt.b_z = mearth[2];
+                posatt.bf_x = mbody[0];
+                posatt.bf_y = mbody[1];
+                posatt.bf_z = mbody[2];
+                posatt.s_x = searth[0];
+                posatt.s_y = searth[1];
+                posatt.s_z = searth[2];
+                posatt.sf_x = sbody[0];
+                posatt.sf_y = sbody[1];
+                posatt.sf_z = sbody[2];
+                posatt.q0 = q0;
+                posatt.q1=q1;
+                posatt.q2=q2;
+                posatt.q3=q3;
                 
                 // test code for timing of main loop
                 //loop_counter++;

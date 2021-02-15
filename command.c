@@ -995,7 +995,7 @@ int CmdCurrentTelemetry(char* paramstr)
             sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving startup telemetry, index %d", index);
             he100_transmit_packet(he100_response, downlink_data);
             // telemetry is already in init_data structure from startup sequence
-            sprintf(downlink_data,"Init Telem: %ld %ld %ld %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %.2f %s %s",
+            sprintf(downlink_data,"Init Telem: %ld %ld %ld %d %d %d %d %d %d %d %d %d %d %d %d %d %d 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x %d %d %d %d %d %d %d %d %.2f %s %s",
                     init_data.u2br_actual, init_data.i2c1br, init_data.i2c2br,
                     init_data.adc_iserror, init_data.sfm_iserror, init_data.sd_iserror,
                     init_data.rtc_flags_iserror, init_data.rtc_flags2_iserror, init_data.rtc_clear_iserror,
@@ -1021,11 +1021,14 @@ int CmdCurrentTelemetry(char* paramstr)
             he100_transmit_packet(he100_response, downlink_data);
             // telemetry is already in the posatt data structure, as long as 
             // a TLE has been uploaded.
-            sprintf(downlink_data,"PosAtt Telem: %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf",
+            sprintf(downlink_data,"PosAtt Telem: %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf",
                     posatt.jd, posatt.t_since, posatt.x_eci, posatt.y_eci, posatt.z_eci,
-                    posatt.lon, posatt.lat, posatt.cor_lat, posatt.lst,
-                    posatt.B_locx, posatt.B_locy, posatt.B_locz, posatt.B_x, posatt.B_y, posatt.B_z,
-                    posatt.B_fx, posatt.B_fy, posatt.B_fz);
+                    posatt.lon, posatt.lat, posatt.cor_lat, posatt.elev, posatt.lst,
+                    posatt.B_x, posatt.B_y, posatt.B_z,
+                    posatt.B_fx, posatt.B_fy, posatt.B_fz, posatt.b_x, posatt.b_y, posatt.b_z,
+                    posatt.bf_x, posatt.bf_y, posatt.bf_z, posatt.s_x, posatt.s_y, posatt.s_z,
+                    posatt.sf_x, posatt.sf_y, posatt.sf_z,
+                    posatt.q0, posatt.q1, posatt.q2, posatt.q3);
             he100_transmit_packet(he100_response, downlink_data);
             break;
             
