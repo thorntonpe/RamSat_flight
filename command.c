@@ -810,7 +810,7 @@ int CmdGetTelemControl(char* paramstr)
         sprintf(downlink_data,"Lev%d: First timestamp = %s, last timestamp = %s", 
                 telem_level, p->first_timestamp, p->last_timestamp);
         he100_transmit_packet(he100_response, downlink_data);
-        sprintf(downlink_data,"Lev%d: First sector = %d, num_sectors = %d, page_count = %d, record_count = %d",
+        sprintf(downlink_data,"Lev%d: First sector = %d, num_sectors = %d, page_count = %d, record_count = %ld",
                 telem_level, p->first_sector, p->num_sectors, p->page_count, p->record_count);
         he100_transmit_packet(he100_response, downlink_data);
         sprintf(downlink_data,"Lev%d: record_period = %d, rec_per_page = %d, page_per_block = %d",
@@ -1408,28 +1408,39 @@ int CmdStartDetumble(char *paramstr)
     return err;
 }
     
-// Set level-0 telemetry to initial condition
-void CmdClearTelem0(void)
+// Configure and initialize Level-0 telemetry
+int CmdConfigTelem0(char *paramstr)
 {
+    int n_param;    // number of parameters sent to this command
     int len;
     char page[256];
     
-    // erase the target 4k block for meta-data
-    sfm_erase_4k(TM0_ADDR1, TM0_ADDR2, TM0_ADDR3);
-    
     // set the initial state for level 0 telemetry 
-    int record_period = 1;     // 1-minute intervals per record
-    int rec_per_page = 60;     // one page for each hour
-    int page_per_block = 24;   // 24 pages (hours) between timestamps
-    int first_sector = 1;      // first sector to use for this telemetry level
-    int num_sectors = 10;      // number of sectors to use for this telemetry level
-    int record_count = 0;      // record counter
+    int record_period;     // 1-minute intervals per record
+    int rec_per_page;      // one page for each hour
+    int page_per_block;    // 24 pages (hours) between timestamps
+    int first_sector;      // first sector to use for this telemetry level
+    int num_sectors;       // number of sectors to use for this telemetry level
+    long int record_count = 0; // record counter
     int page_count = 0;        // page counter (includes timestamp pages)
     
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%d %d %d %d %d",
+            &record_period, &rec_per_page, &page_per_block, &first_sector, &num_sectors);
+    if (n_param != 5)
+    {
+        sprintf(downlink_data,"RamSat: CmdConfigTelem0->wrong n_param: %d (expecting 5)",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
     // build a string to write to SFM
-    sprintf(page,"%d %d %d %d %d %d %d %s %s",record_period, rec_per_page,
+    sprintf(page,"%d %d %d %d %d %ld %d %s %s",record_period, rec_per_page,
             page_per_block, first_sector, num_sectors, record_count,
             page_count, "X", "X");
+    
+    // erase the target 4k block for meta-data
+    sfm_erase_4k(TM0_ADDR1, TM0_ADDR2, TM0_ADDR3);
     
     // write page to SFM
     len = strlen(page);
@@ -1440,33 +1451,59 @@ void CmdClearTelem0(void)
     len=strlen(page);
     sfm_write_page(TM0_ADDR1, TM0_ADDR2+1, page, len);
     
+    // update the global variables so the new telemetry configuration takes
+    // effect immediately
+    telem_lev0.record_period = record_period;
+    telem_lev0.rec_per_page = rec_per_page;
+    telem_lev0.page_per_block = page_per_block;
+    telem_lev0.first_sector = first_sector;
+    telem_lev0.num_sectors = num_sectors;
+    telem_lev0.record_count = record_count;
+    telem_lev0.page_count = page_count;
+    strcpy(telem_lev0.first_timestamp,"X");
+    strcpy(telem_lev0.last_timestamp,"X");
+    strcpy(telem_lev0.pagedata,"empty");
+    
     // downlink status message
-    sprintf(downlink_data,"RamSat: CmdClearTelem0 successful.");
+    sprintf(downlink_data,"RamSat: CmdConfigTelem0 successful.");
     he100_transmit_packet(he100_response, downlink_data);
+    
+    return 0;
 }
 
-// Set level-1 telemetry to initial condition
-void CmdClearTelem1(void)
+// Configure and initialize Level-1 telemetry
+int CmdConfigTelem1(char *paramstr)
 {
+    int n_param;    // number of parameters sent to this command
     int len;
     char page[256];
     
-    // erase the target 4k block for meta-data
-    sfm_erase_4k(TM1_ADDR1, TM1_ADDR2, TM1_ADDR3);
-    
     // set the initial state for level 0 telemetry 
-    int record_period = 2;     // 1-minute intervals per record
-    int rec_per_page = 1;     // one page for each hour
-    int page_per_block = 60;   // 24 pages (hours) between timestamps
-    int first_sector = 11;      // first sector to use for this telemetry level
-    int num_sectors = 1;      // number of sectors to use for this telemetry level
-    int record_count = 0;      // record counter
+    int record_period;     // 1-minute intervals per record
+    int rec_per_page;      // one page for each hour
+    int page_per_block;    // 24 pages (hours) between timestamps
+    int first_sector;      // first sector to use for this telemetry level
+    int num_sectors;       // number of sectors to use for this telemetry level
+    long int record_count = 0; // record counter
     int page_count = 0;        // page counter (includes timestamp pages)
     
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%d %d %d %d %d",
+            &record_period, &rec_per_page, &page_per_block, &first_sector, &num_sectors);
+    if (n_param != 5)
+    {
+        sprintf(downlink_data,"RamSat: CmdConfigTelem1->wrong n_param: %d (expecting 5)",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
     // build a string to write to SFM
-    sprintf(page,"%d %d %d %d %d %d %d %s %s",record_period, rec_per_page,
+    sprintf(page,"%d %d %d %d %d %ld %d %s %s",record_period, rec_per_page,
             page_per_block, first_sector, num_sectors, record_count,
             page_count, "X", "X");
+    
+    // erase the target 4k block for meta-data
+    sfm_erase_4k(TM1_ADDR1, TM1_ADDR2, TM1_ADDR3);
     
     // write page to SFM
     len = strlen(page);
@@ -1477,33 +1514,59 @@ void CmdClearTelem1(void)
     len=strlen(page);
     sfm_write_page(TM1_ADDR1, TM1_ADDR2+1, page, len);
     
+    // update the global variables so the new telemetry configuration takes
+    // effect immediately
+    telem_lev1.record_period = record_period;
+    telem_lev1.rec_per_page = rec_per_page;
+    telem_lev1.page_per_block = page_per_block;
+    telem_lev1.first_sector = first_sector;
+    telem_lev1.num_sectors = num_sectors;
+    telem_lev1.record_count = record_count;
+    telem_lev1.page_count = page_count;
+    strcpy(telem_lev1.first_timestamp,"X");
+    strcpy(telem_lev1.last_timestamp,"X");
+    strcpy(telem_lev1.pagedata,"empty");
+    
     // downlink status message
-    sprintf(downlink_data,"RamSat: CmdClearTelem1 successful.");
+    sprintf(downlink_data,"RamSat: CmdConfigTelem1 successful.");
     he100_transmit_packet(he100_response, downlink_data);
+    
+    return 0;
 }
 
-// Set level-2 telemetry to initial condition
-void CmdClearTelem2(void)
+// Configure and initialize Level-2 telemetry
+int CmdConfigTelem2(char *paramstr)
 {
+    int n_param;    // number of parameters sent to this command
     int len;
     char page[256];
     
-    // erase the target 4k block for meta-data
-    sfm_erase_4k(TM2_ADDR1, TM2_ADDR2, TM2_ADDR3);
-    
     // set the initial state for level 0 telemetry 
-    int record_period = 1;     // 1-minute intervals per record
-    int rec_per_page = 60;     // one page for each hour
-    int page_per_block = 24;   // 24 pages (hours) between timestamps
-    int first_sector = 1;      // first sector to use for this telemetry level
-    int num_sectors = 10;      // number of sectors to use for this telemetry level
-    int record_count = 0;      // record counter
+    int record_period;     // 1-minute intervals per record
+    int rec_per_page;      // one page for each hour
+    int page_per_block;    // 24 pages (hours) between timestamps
+    int first_sector;      // first sector to use for this telemetry level
+    int num_sectors;       // number of sectors to use for this telemetry level
+    long int record_count = 0; // record counter
     int page_count = 0;        // page counter (includes timestamp pages)
     
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%d %d %d %d %d",
+            &record_period, &rec_per_page, &page_per_block, &first_sector, &num_sectors);
+    if (n_param != 5)
+    {
+        sprintf(downlink_data,"RamSat: CmdConfigTelem2->wrong n_param: %d (expecting 5)",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
     // build a string to write to SFM
-    sprintf(page,"%d %d %d %d %d %d %d %s %s",record_period, rec_per_page,
+    sprintf(page,"%d %d %d %d %d %ld %d %s %s",record_period, rec_per_page,
             page_per_block, first_sector, num_sectors, record_count,
             page_count, "X", "X");
+    
+    // erase the target 4k block for meta-data
+    sfm_erase_4k(TM2_ADDR1, TM2_ADDR2, TM2_ADDR3);
     
     // write page to SFM
     len = strlen(page);
@@ -1514,9 +1577,47 @@ void CmdClearTelem2(void)
     len=strlen(page);
     sfm_write_page(TM2_ADDR1, TM2_ADDR2+1, page, len);
     
+    // update the global variables so the new telemetry configuration takes
+    // effect immediately
+    telem_lev2.record_period = record_period;
+    telem_lev2.rec_per_page = rec_per_page;
+    telem_lev2.page_per_block = page_per_block;
+    telem_lev2.first_sector = first_sector;
+    telem_lev2.num_sectors = num_sectors;
+    telem_lev2.record_count = record_count;
+    telem_lev2.page_count = page_count;
+    strcpy(telem_lev2.first_timestamp,"X");
+    strcpy(telem_lev2.last_timestamp,"X");
+    strcpy(telem_lev2.pagedata,"empty");
+    
     // downlink status message
-    sprintf(downlink_data,"RamSat: CmdClearTelem2 successful.");
+    sprintf(downlink_data,"RamSat: CmdConfigTelem2 successful.");
     he100_transmit_packet(he100_response, downlink_data);
+    
+    return 0;
+}
+
+// Set is_active (0 or 1) for all telemetry levels
+int CmdTelemIsActive(char *paramstr)
+{
+    int n_param;    // number of parameters sent to this command
+    
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%d %d %d",
+            &telem_lev0.is_active, &telem_lev1.is_active, &telem_lev2.is_active);
+    if (n_param != 3)
+    {
+        sprintf(downlink_data,"RamSat: CmdTelemIsActive->wrong n_param: %d (expecting 3)",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
+    // downlink status message
+    sprintf(downlink_data,"RamSat: CmdTelemIsActive successful (%d %d %d)",
+            telem_lev0.is_active, telem_lev1.is_active, telem_lev2.is_active);
+    he100_transmit_packet(he100_response, downlink_data);
+    
+    return 0;
 }
 
 // Set the MUST_WAIT flag for post-deployment timer, in SFM

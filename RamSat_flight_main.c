@@ -236,8 +236,6 @@ int main(void) {
     double coslat,sinlat,coslst,sinlst; // for intermediate calculations
     double t1;          // temporary variable
     
-    char isodatetime[25];  // for test code reporting of time
-    int loop_counter;
     unsigned char he100_response[8];
     char downlink_msg[260]; // Message to be downlinked by RamSat
 
@@ -404,9 +402,16 @@ int main(void) {
     // initialize the elapsed time counters for multi-level telemetry
     int telem_lev0_elapsed = 0;
     int telem_lev1_elapsed = 0;
+    int telem_lev2_elapsed = 0;
+    
+    // read the telemetry configuration metadata from SFM
+    //telem_lev0_read_metadata(&telem_lev0);
+    //telem_lev1_read_metadata(&telem_lev1);
+    //telem_lev2_read_metadata(&telem_lev2);
     
     // initialize telemetry control data structures 
     // Level 0 telemetry control
+    telem_lev0.is_active = 1;         // telemetry initialized as active
     telem_lev0.record_period = 1;     // 1-minute intervals per record
     telem_lev0.rec_per_page = 60;     // one page for each hour
     telem_lev0.page_per_block = 24;   // 24 pages (hours) between timestamps
@@ -419,6 +424,7 @@ int main(void) {
     telem_lev0.pagedata[0]=0;         // initialize pagedata as null
     
     // Level 1 telemetry control
+    telem_lev1.is_active = 1;         // telemetry initialized as active
     telem_lev1.record_period = 2;     // 1-minute intervals per record
     telem_lev1.rec_per_page = 1;     // one page for each hour
     telem_lev1.page_per_block = 60;   // 24 pages (hours) between timestamps
@@ -431,11 +437,12 @@ int main(void) {
     telem_lev1.pagedata[0]=0;         // initialize pagedata as null
 
     // Level 2 telemetry control
+    telem_lev2.is_active = 1;         // telemetry initialized as active
     telem_lev2.record_period = 1;     // 1-minute intervals per record
-    telem_lev2.rec_per_page = 60;     // one page for each hour
-    telem_lev2.page_per_block = 24;   // 24 pages (hours) between timestamps
-    telem_lev2.first_sector = 1;      // first sector to use for this telemetry level
-    telem_lev2.num_sectors = 10;      // number of sectors to use for this telemetry level
+    telem_lev2.rec_per_page = 10;     // one page for each hour
+    telem_lev2.page_per_block = 6;   // 24 pages (hours) between timestamps
+    telem_lev2.first_sector = 12;      // first sector to use for this telemetry level
+    telem_lev2.num_sectors = 1;      // number of sectors to use for this telemetry level
     telem_lev2.record_count = 0;      // record counter
     telem_lev2.page_count = 0;        // page counter (includes timestamp pages)
     telem_lev2.first_timestamp[0]=0;  // initialize timestamps as null
@@ -490,21 +497,37 @@ int main(void) {
             // track elapsed time for different levels of telemetry
             telem_lev0_elapsed++;
             telem_lev1_elapsed++;
+            telem_lev2_elapsed++;
                         
             // check if any telemetry levels are triggered
+            // also, check is_active flags, which allow user to turn on/off
+            // each telemetry gathering level (useful during reconfiguration)
+            // Level-0 telemetry
             if (telem_lev0_elapsed == telem_lev0.record_period)
             {
                 // perform level-0 telemetry operations
-                telem_gather_lev0(&telem_lev0);
+                if (telem_lev0.is_active)
+                    telem_gather_lev0(&telem_lev0);
                 // reset elapsed counter
                 telem_lev0_elapsed = 0;
             }
+            //Level-1 telemetry
             if (telem_lev1_elapsed == telem_lev1.record_period)
             {
                 // perform level-0 telemetry operations
-                telem_gather_lev1(&telem_lev1);
+                if (telem_lev1.is_active)
+                    telem_gather_lev1(&telem_lev1);
                 // reset elapsed counter
                 telem_lev1_elapsed = 0;
+            }
+            // Level-2 telemetry
+            if (telem_lev2_elapsed == telem_lev2.record_period)
+            {
+                // perform level-0 telemetry operations
+                if (telem_lev2.is_active)
+                    telem_gather_lev2(&telem_lev2);
+                // reset elapsed counter
+                telem_lev2_elapsed = 0;
             }
             
             // Now transmit the one-minute beacon message
@@ -664,17 +687,20 @@ int main(void) {
                             cmd_err = CmdStartDetumble(cmd_paramstr);
                             break;
                         
-                        case 80: // clear level-0 telemetry
-                            CmdClearTelem0();
+                        case 80: // Configure and initialize level-0 telemetry
+                            CmdConfigTelem0(cmd_paramstr);
                             break;
                             
-                        case 81: // clear level-1 telemetry
-                            CmdClearTelem1();
+                        case 81: // Configure and initialize level-1 telemetry
+                            CmdConfigTelem1(cmd_paramstr);
                             break;
                             
-                        case 82: // clear level-2 telemetry
-                            CmdClearTelem2();
+                        case 82: // Configure and initialize level-2 telemetry
+                            CmdConfigTelem2(cmd_paramstr);
                             break;
+                            
+                        case 86: // Set telemetry is_active on/off (all levels)
+                            CmdTelemIsActive(cmd_paramstr);
                             
                         case 90: // Set post-deployment timer flag (pre-flight)
                             CmdSetPDT();
@@ -728,14 +754,6 @@ int main(void) {
             // clear the new TLE flag, set the good TLE flag
             isNewTLE = 0;
             isGoodTLE = 1;
-            // test code to get timing for the main loop
-            // on the first pass with a new TLE, write out the isodatetime
-            get_isodatetime(isodatetime);
-            _U2RXIE = 0;
-            sprintf(downlink_msg,"RamSat: New TLE, ISO datetime: %s",isodatetime);
-            he100_transmit_packet(he100_response, downlink_msg);
-            _U2RXIE = 1;
-            loop_counter = 0;
         }
         
         // If there is a good TLE, use it and RTC data to make an orbital prediction
@@ -758,9 +776,9 @@ int main(void) {
                 cor_lat = atan(tan(lat)/f2);
                 
                 // hardwired lon, lat, elev at RMS
-                lon = -1.47085; // 84.27333 W
-                lat = 0.62852; // 36.01167 N
-                elev = 0.259; // 850 feet AMSL
+                //lon = -1.47085; // 84.27333 W
+                //lat = 0.62852; // 36.01167 N
+                //elev = 0.259; // 850 feet AMSL
                 
                 // estimate Earth's magnetic field vector at this location
                 // returns values in local tangential coordinates
@@ -900,19 +918,6 @@ int main(void) {
                 posatt.q1=q1;
                 posatt.q2=q2;
                 posatt.q3=q3;
-                
-                // test code for timing of main loop
-                //loop_counter++;
-                //if (loop_counter == 100)
-                //{
-                //    get_isodatetime(isodatetime);
-                //    _U2RXIE = 0;
-                //    sprintf(downlink_msg,"RamSat: completed 1000 cycles, ISO datetime: %s",isodatetime);
-                //    he100_transmit_packet(he100_response, downlink_msg);
-                //    _U2RXIE = 1;
-                //    // reset the loop counter, to get timing reports every 1000 cycles
-                //    loop_counter = 0;
-                //}
             }   // end of no error on sgp4
             else
             {

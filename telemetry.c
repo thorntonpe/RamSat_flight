@@ -116,23 +116,13 @@ void telem_form_beacon(char *beacon_str)
             posatt.lon*100.0, posatt.cor_lat*100.0, posatt.elev*10.0);
 }
 
-void telem_gather_lev0(telem_control_type* c)
+void telem_lev0_read_metadata(telem_control_type* c)
 {
-    // In the following, a block is a group of data pages written between timestamp pages
-    
-    char isodatetime[30];
-    char new_str[16];
-    int len;
-    float scaled_value;
-    int pagerec_count;   // the current record count on current page
-    int blockpage_count; // the current page count in current block
-    int block_count;     // the current block count
-    int sector, sector_page;
     int page[256];
     char meta_data[256];
     char page_data[256];
     int i;
-    
+
     // read metadata from SFM for this telemetry level
     sfm_read_page(TM0_ADDR1, TM0_ADDR2, page);
     // copy from data (int array) to meta_data (char array)
@@ -154,7 +144,7 @@ void telem_gather_lev0(telem_control_type* c)
     page_data[255]=0;
     
     // scan meta data from string into data struct
-    sscanf(meta_data,"%d %d %d %d %d %d %d %s %s",&c->record_period, &c->rec_per_page, 
+    sscanf(meta_data,"%d %d %d %d %d %ld %d %s %s",&c->record_period, &c->rec_per_page, 
             &c->page_per_block, &c->first_sector, &c->num_sectors, &c->record_count, &c->page_count,
             c->first_timestamp, c->last_timestamp);
     
@@ -162,6 +152,101 @@ void telem_gather_lev0(telem_control_type* c)
     sscanf(page_data, "%s", c->pagedata);
     // if this is the special string, then replace with null
     if (strcmp(c->pagedata,"empty") == 1) strcpy(c->pagedata,"");
+}
+
+void telem_lev1_read_metadata(telem_control_type* c)
+{
+    int page[256];
+    char meta_data[256];
+    char page_data[256];
+    int i;
+   
+    // read metadata from SFM for this telemetry level
+    sfm_read_page(TM1_ADDR1, TM1_ADDR2, page);
+    // copy from data (int array) to meta_data (char array)
+    for (i=0 ; i<255 ; i++)
+    {
+        meta_data[i] = page[i] & 0x00ff;
+    }
+    // force null-termination in last place, for safety
+    meta_data[255]=0;
+
+    // read pagedata from SFM for this telemetry level
+    sfm_read_page(TM1_ADDR1, TM1_ADDR2+1, page);
+    // copy from data (int array) to page_data (char array)
+    for (i=0 ; i<255 ; i++)
+    {
+        page_data[i] = page[i] & 0x00ff;
+    }
+    // force null-termination in last place, for safety
+    page_data[255]=0;
+    
+    // scan meta data from string into data struct
+    sscanf(meta_data,"%d %d %d %d %d %ld %d %s %s",&c->record_period, &c->rec_per_page, 
+            &c->page_per_block, &c->first_sector, &c->num_sectors, &c->record_count, &c->page_count,
+            c->first_timestamp, c->last_timestamp);
+    
+    // scan page_data from string into data struct
+    sscanf(page_data, "%s", c->pagedata);
+    // if this is the special string, then replace with null
+    if (strcmp(c->pagedata,"empty") == 1) strcpy(c->pagedata,"");
+}
+
+void telem_lev2_read_metadata(telem_control_type* c)
+{
+    int page[256];
+    char meta_data[256];
+    char page_data[256];
+    int i;
+
+    // read metadata from SFM for this telemetry level
+    sfm_read_page(TM2_ADDR1, TM2_ADDR2, page);
+    // copy from data (int array) to meta_data (char array)
+    for (i=0 ; i<255 ; i++)
+    {
+        meta_data[i] = page[i] & 0x00ff;
+    }
+    // force null-termination in last place, for safety
+    meta_data[255]=0;
+
+    // read pagedata from SFM for this telemetry level
+    sfm_read_page(TM2_ADDR1, TM2_ADDR2+1, page);
+    // copy from data (int array) to page_data (char array)
+    for (i=0 ; i<255 ; i++)
+    {
+        page_data[i] = page[i] & 0x00ff;
+    }
+    // force null-termination in last place, for safety
+    page_data[255]=0;
+    
+    // scan meta data from string into data struct
+    sscanf(meta_data,"%d %d %d %d %d %ld %d %s %s",&c->record_period, &c->rec_per_page, 
+            &c->page_per_block, &c->first_sector, &c->num_sectors, &c->record_count, &c->page_count,
+            c->first_timestamp, c->last_timestamp);
+    
+    // scan page_data from string into data struct
+    sscanf(page_data, "%s", c->pagedata);
+    // if this is the special string, then replace with null
+    if (strcmp(c->pagedata,"empty") == 1) strcpy(c->pagedata,"");
+}
+
+void telem_gather_lev0(telem_control_type* c)
+{
+    // In the following, a block is a group of data pages written between timestamp pages
+    
+    char isodatetime[30];
+    char new_str[16];
+    int len;
+    float scaled_value;
+    long int pagerec_count;   // the current record count on current page
+    long int blockpage_count; // the current page count in current block
+    long int block_count;     // the current block count
+    int sector, sector_page;
+    char meta_data[256];
+    char page_data[256];
+    
+    // read the metadata from SFM
+    telem_lev0_read_metadata(c);
     
     // calculate minute, hour, and day count from telem_count
     pagerec_count = c->record_count % c->rec_per_page;
@@ -183,7 +268,7 @@ void telem_gather_lev0(telem_control_type* c)
     if (pagerec_count == 0)
     {
         // if this is the start of a page period, initialize the page string
-        sprintf(c->pagedata,"T0%02d",blockpage_count);
+        sprintf(c->pagedata,"T0%02ld",blockpage_count);
         
         // if this is also the start of a new block, write a timestamp page
         if (blockpage_count == 0)
@@ -237,7 +322,7 @@ void telem_gather_lev0(telem_control_type* c)
     // erase the target 4k block for meta-data
     sfm_erase_4k(TM0_ADDR1, TM0_ADDR2, TM0_ADDR3);
     // save the current meta data to SFM
-    sprintf(meta_data,"%d %d %d %d %d %d %d %s %s",c->record_period, c->rec_per_page,
+    sprintf(meta_data,"%d %d %d %d %d %ld %d %s %s",c->record_period, c->rec_per_page,
             c->page_per_block, c->first_sector, c->num_sectors, c->record_count,
             c->page_count, c->first_timestamp, c->last_timestamp);
     len = strlen(meta_data);
@@ -262,45 +347,16 @@ void telem_gather_lev1(telem_control_type* c)
     
     char isodatetime[30];
     int len;
-    int pagerec_count;   // the current record count on current page
-    int blockpage_count; // the current page count in current block
-    int block_count;     // the current block count
+    long int pagerec_count;   // the current record count on current page
+    long int blockpage_count; // the current page count in current block
+    long int block_count;     // the current block count
     int sector, sector_page;
-    int page[256];
     char meta_data[256];
     char page_data[256];
-    int i;
     
-    // read metadata from SFM for this telemetry level
-    sfm_read_page(TM1_ADDR1, TM1_ADDR2, page);
-    // copy from data (int array) to meta_data (char array)
-    for (i=0 ; i<255 ; i++)
-    {
-        meta_data[i] = page[i] & 0x00ff;
-    }
-    // force null-termination in last place, for safety
-    meta_data[255]=0;
-
-    // read pagedata from SFM for this telemetry level
-    sfm_read_page(TM1_ADDR1, TM1_ADDR2+1, page);
-    // copy from data (int array) to page_data (char array)
-    for (i=0 ; i<255 ; i++)
-    {
-        page_data[i] = page[i] & 0x00ff;
-    }
-    // force null-termination in last place, for safety
-    page_data[255]=0;
-    
-    // scan meta data from string into data struct
-    sscanf(meta_data,"%d %d %d %d %d %d %d %s %s",&c->record_period, &c->rec_per_page, 
-            &c->page_per_block, &c->first_sector, &c->num_sectors, &c->record_count, &c->page_count,
-            c->first_timestamp, c->last_timestamp);
-    
-    // scan page_data from string into data struct
-    sscanf(page_data, "%s", c->pagedata);
-    // if this is the special string, then replace with null
-    if (strcmp(c->pagedata,"empty") == 1) strcpy(c->pagedata,"");
-    
+     // read the metadata from SFM
+    telem_lev1_read_metadata(c);
+   
     // calculate minute, hour, and day count from telem_count
     pagerec_count = c->record_count % c->rec_per_page;
     blockpage_count = (c->record_count/c->rec_per_page) % c->page_per_block;
@@ -321,7 +377,7 @@ void telem_gather_lev1(telem_control_type* c)
     if (pagerec_count == 0)
     {
         // if this is the start of a page period, initialize the page string
-        sprintf(c->pagedata,"T1%02d",blockpage_count);
+        sprintf(c->pagedata,"T1%02ld",blockpage_count);
         
         // if this is also the start of a new block, write a timestamp page
         if (blockpage_count == 0)
@@ -371,7 +427,7 @@ void telem_gather_lev1(telem_control_type* c)
     // erase the target 4k block for meta-data
     sfm_erase_4k(TM1_ADDR1, TM1_ADDR2, TM1_ADDR3);
     // save the current meta data to SFM
-    sprintf(meta_data,"%d %d %d %d %d %d %d %s %s",c->record_period, c->rec_per_page,
+    sprintf(meta_data,"%d %d %d %d %d %ld %d %s %s",c->record_period, c->rec_per_page,
             c->page_per_block, c->first_sector, c->num_sectors, c->record_count,
             c->page_count, c->first_timestamp, c->last_timestamp);
     len = strlen(meta_data);
@@ -388,4 +444,109 @@ void telem_gather_lev1(telem_control_type* c)
     }
     len = strlen(page_data);
     sfm_write_page(TM1_ADDR1, TM1_ADDR2+1, page_data, len);
+}
+
+void telem_gather_lev2(telem_control_type* c)
+{
+    // In the following, a block is a group of data pages written between timestamp pages
+    
+    char isodatetime[30];
+    int len;
+    long int pagerec_count;   // the current record count on current page
+    long int blockpage_count; // the current page count in current block
+    long int block_count;     // the current block count
+    int sector, sector_page;
+    char meta_data[256];
+    char page_data[256];
+
+    // read the metadata from SFM
+    telem_lev2_read_metadata(c);
+    
+    // calculate minute, hour, and day count from telem_count
+    pagerec_count = c->record_count % c->rec_per_page;
+    blockpage_count = (c->record_count/c->rec_per_page) % c->page_per_block;
+    block_count = c->record_count/(c->rec_per_page * c->page_per_block);
+    
+    // calculate the current sector and page from page_count
+    // includes wrapping when sector goes beyond num_sectors
+    sector = ((c->page_count / PAGES_PER_SECTOR) % c->num_sectors) + c->first_sector;
+    sector_page = c->page_count % PAGES_PER_SECTOR;
+
+    if (sector_page == 0)
+    {
+        // first page in new sector, so do a sector erase
+        sfm_erase_64k(sector);
+    }
+    
+    // on count = 0, write a time stamp page
+    if (pagerec_count == 0)
+    {
+        // if this is the start of a page period, initialize the page string
+        sprintf(c->pagedata,"T2%02ld",blockpage_count);
+        
+        // if this is also the start of a new block, write a timestamp page
+        if (blockpage_count == 0)
+        {
+            // get the ISO-formatted date+time
+            get_isodatetime(isodatetime);
+            len = strlen(isodatetime);
+            // write the timestamp page
+            sfm_write_page(sector, sector_page, isodatetime, len+1);
+            // save this timestamp info to control structure
+            // update first once, update last always
+            if (c->first_timestamp[0]=='X')
+            {
+                strcpy(c->first_timestamp, isodatetime);
+            }
+            strcpy(c->last_timestamp, isodatetime);
+            // increment the page count
+            c->page_count = c->page_count+1;
+            
+            // page_count updated, so recalculate sector and sector_page
+            // sector wrapping if needed, and erase new sector, if needed
+            sector = ((c->page_count / PAGES_PER_SECTOR) % c->num_sectors) + c->first_sector;
+            sector_page = c->page_count % PAGES_PER_SECTOR;
+            if (sector_page == 0)
+            {
+                // first page in new sector, so do a sector erase
+                sfm_erase_64k(sector);
+            }
+        }
+    }
+    
+    // gather telemetry, format, and concatenate to page string
+    strcat(c->pagedata,",Lev2_test");
+    // increment the telemetry counter
+    c->record_count = c->record_count + 1;
+    
+    // if this is the end of the page, write page and increment page_count
+    if (pagerec_count == (c->rec_per_page - 1))
+    {
+        len = strlen(c->pagedata);
+        sfm_write_page(sector, sector_page, c->pagedata, len+1);
+        c->page_count = c->page_count + 1;
+        // reset pagedata with null
+        c->pagedata[0] = 0;
+    }
+    
+    // erase the target 4k block for meta-data
+    sfm_erase_4k(TM2_ADDR1, TM2_ADDR2, TM2_ADDR3);
+    // save the current meta data to SFM
+    sprintf(meta_data,"%d %d %d %d %d %ld %d %s %s",c->record_period, c->rec_per_page,
+            c->page_per_block, c->first_sector, c->num_sectors, c->record_count,
+            c->page_count, c->first_timestamp, c->last_timestamp);
+    len = strlen(meta_data);
+    sfm_write_page(TM2_ADDR1, TM2_ADDR2, meta_data, len);
+    
+    // save the current page data to SFM to allow seamless restart
+    if (c->pagedata[0]==0)
+    {
+        strcpy(page_data,"empty");
+    }
+    else
+    {
+        strcpy(page_data,c->pagedata);
+    }
+    len = strlen(page_data);
+    sfm_write_page(TM2_ADDR1, TM2_ADDR2+1, page_data, len);
 }
