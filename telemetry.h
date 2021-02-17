@@ -5,6 +5,19 @@
  * Created on:  
  */
 
+// SFM addresses for telemetry meta-data, level-0
+#define TM0_ADDR1 0x00
+#define TM0_ADDR2 0x30
+#define TM0_ADDR3 0x00
+// SFM addresses for telemetry meta-data, level-1
+#define TM1_ADDR1 0x00
+#define TM1_ADDR2 0x40
+#define TM1_ADDR3 0x00
+// SFM addresses for telemetry meta-data, level-2
+#define TM2_ADDR1 0x00
+#define TM2_ADDR2 0x50
+#define TM2_ADDR3 0x00
+
 // telemetry control data structure
 typedef struct
 {

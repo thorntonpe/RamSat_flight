@@ -29,11 +29,6 @@
 #include <string.h>
 #include <math.h>
 
-// Configuration for ground testing and flight configurations
-// Input/Output configuration: Define USB or HE100, but not both
-//#define USB      // Enable USB I/O (ground testing only)
-#define HE100    // Enable He-100 transceiver I/O (ground testing or flight)
-
 // global variable for initialization data
 init_data_type init_data; // data structure for peripheral initialization
 
@@ -47,6 +42,7 @@ char beacon_msg[260];
 telem_control_type telem_lev0;   // Level 0 control data
 telem_control_type telem_lev1;   // Level 1 control data
 telem_control_type telem_lev2;   // Level 2 control data
+
 // global variable for position and attitude data
 position_attitude_type posatt;
 
@@ -242,6 +238,8 @@ int main(void) {
     
     char isodatetime[25];  // for test code reporting of time
     int loop_counter;
+    unsigned char he100_response[8];
+    char downlink_msg[260]; // Message to be downlinked by RamSat
 
     // precalculate ellipsoid flattening parameter
     f = 0.003352811;    // flattening parameter for ellipsoid
@@ -262,21 +260,9 @@ int main(void) {
     // reset the timer
     TMR3 = 0x0000;
     TMR2 = 0x0000;
-    // set a low priority, clear flag, and enable the Timer2/3 interrupt
-    _T3IP = 0x01;
-    _T3IF = 0;
-    _T3IE = 1;
     
-    // Set desired baud rates for UART2 (He-100 radio or USB interfaces)
-#ifdef HE100
+    // Set baud rates on UART2 for communication with He-100
     init_data.u2br_request = 9600;   // UART2 desired baud rate for radio
-    unsigned char he100_response[8];
-    char downlink_msg[260]; // Response/message to be downlinked by RamSat
-#endif
-    
-#ifdef USB    
-    init_data.u2br_request = 9600; // UART2 desired baud rate for COM port
-#endif
 
     // set desired clock speeds for SPI peripherals
     init_data.spi1_fsck = 250000;  // SD card, initial speed (250kHz) 
@@ -292,18 +278,6 @@ int main(void) {
     // Initialize the PIC24F peripherals
     init_peripherals(&init_data);
 
-#ifdef USB
-    // enable level translation for USB I/O through U1 and U16 chips
-    _TRISC1 = 0;        // Set Port C, pin 1 as output (OE-USB)
-    _RC1 = 0;           // set the OE-USB signal low, to allow level translation
-    // Common header for ground testing output
-    write_string2("---------------------------------------------");
-    write_string2("RamSat flight software: ground testing output");
-    write_string2("Press any key to continue...");
-    ui = read_char2();
-    write_string2("---------------------------------------------");
-#endif
-    
     // Initialize the hardware components that are integrated on Pumpkin MBM
     // (serial flash memory, SD card, and real-time clock)
     init_motherboard_components(&init_data);
@@ -408,7 +382,6 @@ int main(void) {
 
     // Retrieve battery telemetry and downlink startup message
     float batv = eps_get_batv();
-    int size_init_data = sizeof(init_data);
     sprintf(downlink_msg,"RamSat: Startup BatV = %.2f",batv);
     he100_transmit_packet(he100_response, downlink_msg);
     
@@ -443,9 +416,10 @@ int main(void) {
     telem_lev0.page_count = 0;        // page counter (includes timestamp pages)
     telem_lev0.first_timestamp[0]=0;  // initialize timestamps as null
     telem_lev0.last_timestamp[0]=0;   // initialize timestamps as null
+    telem_lev0.pagedata[0]=0;         // initialize pagedata as null
     
     // Level 1 telemetry control
-    telem_lev1.record_period = 1;     // 1-minute intervals per record
+    telem_lev1.record_period = 2;     // 1-minute intervals per record
     telem_lev1.rec_per_page = 1;     // one page for each hour
     telem_lev1.page_per_block = 60;   // 24 pages (hours) between timestamps
     telem_lev1.first_sector = 11;      // first sector to use for this telemetry level
@@ -454,6 +428,7 @@ int main(void) {
     telem_lev1.page_count = 0;        // page counter (includes timestamp pages)
     telem_lev1.first_timestamp[0]=0;  // initialize timestamps as null
     telem_lev1.last_timestamp[0]=0;   // initialize timestamps as null
+    telem_lev1.pagedata[0]=0;         // initialize pagedata as null
 
     // Level 2 telemetry control
     telem_lev2.record_period = 1;     // 1-minute intervals per record
@@ -465,6 +440,7 @@ int main(void) {
     telem_lev2.page_count = 0;        // page counter (includes timestamp pages)
     telem_lev2.first_timestamp[0]=0;  // initialize timestamps as null
     telem_lev2.last_timestamp[0]=0;   // initialize timestamps as null
+    telem_lev2.pagedata[0]=0;         // initialize pagedata as null
     
     // Some initialization for iMTQ
     // set the mtm time integration parameter
@@ -478,6 +454,12 @@ int main(void) {
     char cmd_paramstr[257]; // parameters passed in uplink command
     int cmd_id;             // integer value for command ID
     int cmd_err;            // return value for command handlers
+    
+    // Initiate the timed-event handler
+    // set a low priority, clear flag, and enable the Timer2/3 interrupt
+    _T3IP = 0x01;
+    _T3IF = 0;
+    _T3IE = 1;
     
     // Initiate the radio command and control interface:
     // set a high interrupt priority for uplink, clear the UART2 receive
@@ -496,23 +478,14 @@ int main(void) {
             // Reset watchdog timer on each minute boundary
             eps_reset_watchdog();
             
-            // RamSat beacon message: broadcast once each minute
-            // build beacon string
+            // RamSat beacon message: generated once each minute.
+            // Build beacon string, but don't transmit yet...
+            // wait on transmit until the other telemetry levels are gathered,
+            // to avoid gathering telemetry in the midst of a transmit.
+            // NB: the beacon_msg string is also accessed as a global variable from the
+            // Level-1 telemetry, so forming the string first allows that telemetry to
+            // use up to date information.
             telem_form_beacon(beacon_msg);
-            // disable UART2 interrupt
-            _U2RXIE = 0;
-            // broadcast beacon message            
-            he100_transmit_packet(he100_response, beacon_msg);
-            // reset the UART2 receive traps
-            nhbytes = 0;
-            ndbytes = 0;
-            ishead_flag = 0;
-            isdata_flag = 0;
-            he100_receive = 0;
-            // clear any overflow error, which also clears the receive buffer
-            U2STAbits.OERR = 0;
-            // restart the interrupt handler
-            _U2RXIE = 1;
             
             // track elapsed time for different levels of telemetry
             telem_lev0_elapsed++;
@@ -533,6 +506,22 @@ int main(void) {
                 // reset elapsed counter
                 telem_lev1_elapsed = 0;
             }
+            
+            // Now transmit the one-minute beacon message
+            // disable UART2 interrupt
+            _U2RXIE = 0;
+            // broadcast beacon message            
+            he100_transmit_packet(he100_response, beacon_msg);
+            // reset the UART2 receive traps
+            nhbytes = 0;
+            ndbytes = 0;
+            ishead_flag = 0;
+            isdata_flag = 0;
+            he100_receive = 0;
+            // clear any overflow error, which also clears the receive buffer
+            U2STAbits.OERR = 0;
+            // restart the interrupt handler
+            _U2RXIE = 1;
             
             // reset the global 1-minute flag
             minute_elapsed = 0;
@@ -675,6 +664,18 @@ int main(void) {
                             cmd_err = CmdStartDetumble(cmd_paramstr);
                             break;
                         
+                        case 80: // clear level-0 telemetry
+                            CmdClearTelem0();
+                            break;
+                            
+                        case 81: // clear level-1 telemetry
+                            CmdClearTelem1();
+                            break;
+                            
+                        case 82: // clear level-2 telemetry
+                            CmdClearTelem2();
+                            break;
+                            
                         case 90: // Set post-deployment timer flag (pre-flight)
                             CmdSetPDT();
                             break;
@@ -711,7 +712,8 @@ int main(void) {
             ishead_flag = 0;
             isdata_flag = 0;
             he100_receive = 0;
-
+            // clear the overflow error, which also clears the receive buffer
+            U2STAbits.OERR = 0;
             // re-enable the UART2 receive interrupt
             _U2RXIE = 1;
         }

@@ -104,6 +104,40 @@ void sfm_write_1byte(int adr1, int adr2, int adr3, int data)
     while (ReadSR() & 0x1);
 }
 
+void sfm_erase_4k(int adr1, int adr2, int adr3)
+{
+    // adr1, adr2, adr3 are the 24-bit address within the 4k block to erase
+    
+    // write enable to change write protection
+    CS_SFM = 0;             // select the SFM
+    write_spi3(SFM_WEN);    // send write enable command
+    CS_SFM = 1;               // deselect, terminate command
+    // turn off the write protect flag for sector    
+    CS_SFM = 0;
+    write_spi3(SFM_SECTUNP);
+    write_spi3(adr1);
+    write_spi3(adr2);
+    write_spi3(adr3);
+    CS_SFM = 1;
+    // wait for the unprotect operation to complete by monitoring bit 0 of the SR
+    while (ReadSR() & 0x1);
+    
+    // Erase the designated 4 KByte block (must be erased before writing)
+    // send write-enable command
+    CS_SFM = 0;
+    write_spi3(SFM_WEN);
+    CS_SFM = 1;
+    // send block erase command
+    CS_SFM = 0;
+    write_spi3(SFM_ER4K);
+    write_spi3(adr1);
+    write_spi3(adr2);
+    write_spi3(adr3);
+    CS_SFM = 1;
+    // wait for the erase operation to complete by monitoring bit 0 of the SR
+    while (ReadSR() & 0x1);
+}
+
 void sfm_erase_64k(int sector)
 {
     // sector is the sector number (0-127) to be erased
