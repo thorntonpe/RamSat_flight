@@ -118,27 +118,28 @@ void telem_form_beacon(char *beacon_str)
 
 void telem_lev0_read_metadata(telem_control_type* c)
 {
-    int page[256];
+    int page1[256];
+    int page2[256];
     char meta_data[256];
     char page_data[256];
     int i;
 
     // read metadata from SFM for this telemetry level
-    sfm_read_page(TM0_ADDR1, TM0_ADDR2, page);
+    sfm_read_page(TM0_ADDR1, TM0_ADDR2, page1);
     // copy from data (int array) to meta_data (char array)
     for (i=0 ; i<255 ; i++)
     {
-        meta_data[i] = page[i] & 0x00ff;
+        meta_data[i] = page1[i] & 0x00ff;
     }
     // force null-termination in last place, for safety
     meta_data[255]=0;
 
     // read pagedata from SFM for this telemetry level
-    sfm_read_page(TM0_ADDR1, TM0_ADDR2+1, page);
+    sfm_read_page(TM0_ADDR1, TM0_ADDR2+1, page2);
     // copy from data (int array) to page_data (char array)
     for (i=0 ; i<255 ; i++)
     {
-        page_data[i] = page[i] & 0x00ff;
+        page_data[i] = page2[i] & 0x00ff;
     }
     // force null-termination in last place, for safety
     page_data[255]=0;
@@ -149,34 +150,35 @@ void telem_lev0_read_metadata(telem_control_type* c)
             c->first_timestamp, c->last_timestamp);
     
     // scan page_data from string into data struct
-    sscanf(page_data, "%s", c->pagedata);
+    sscanf(page_data,"%s",c->pagedata);
     // if this is the special string, then replace with null
-    if (strcmp(c->pagedata,"empty") == 1) strcpy(c->pagedata,"");
+    if (strcmp(c->pagedata,"X") == 1) strcpy(c->pagedata,"");
 }
 
 void telem_lev1_read_metadata(telem_control_type* c)
 {
-    int page[256];
+    int page1[256];
+    int page2[256];
     char meta_data[256];
     char page_data[256];
     int i;
    
     // read metadata from SFM for this telemetry level
-    sfm_read_page(TM1_ADDR1, TM1_ADDR2, page);
+    sfm_read_page(TM1_ADDR1, TM1_ADDR2, page1);
     // copy from data (int array) to meta_data (char array)
     for (i=0 ; i<255 ; i++)
     {
-        meta_data[i] = page[i] & 0x00ff;
+        meta_data[i] = page1[i] & 0x00ff;
     }
     // force null-termination in last place, for safety
     meta_data[255]=0;
 
     // read pagedata from SFM for this telemetry level
-    sfm_read_page(TM1_ADDR1, TM1_ADDR2+1, page);
+    sfm_read_page(TM1_ADDR1, TM1_ADDR2+1, page2);
     // copy from data (int array) to page_data (char array)
     for (i=0 ; i<255 ; i++)
     {
-        page_data[i] = page[i] & 0x00ff;
+        page_data[i] = page2[i] & 0x00ff;
     }
     // force null-termination in last place, for safety
     page_data[255]=0;
@@ -187,34 +189,35 @@ void telem_lev1_read_metadata(telem_control_type* c)
             c->first_timestamp, c->last_timestamp);
     
     // scan page_data from string into data struct
-    sscanf(page_data, "%s", c->pagedata);
+    sscanf(page_data,"%s",c->pagedata);
     // if this is the special string, then replace with null
-    if (strcmp(c->pagedata,"empty") == 1) strcpy(c->pagedata,"");
+    if (strcmp(c->pagedata,"X") == 1) strcpy(c->pagedata,"");
 }
 
 void telem_lev2_read_metadata(telem_control_type* c)
 {
-    int page[256];
+    int page1[256];
+    int page2[256];
     char meta_data[256];
     char page_data[256];
     int i;
 
     // read metadata from SFM for this telemetry level
-    sfm_read_page(TM2_ADDR1, TM2_ADDR2, page);
+    sfm_read_page(TM2_ADDR1, TM2_ADDR2, page1);
     // copy from data (int array) to meta_data (char array)
     for (i=0 ; i<255 ; i++)
     {
-        meta_data[i] = page[i] & 0x00ff;
+        meta_data[i] = page1[i] & 0x00ff;
     }
     // force null-termination in last place, for safety
     meta_data[255]=0;
 
     // read pagedata from SFM for this telemetry level
-    sfm_read_page(TM2_ADDR1, TM2_ADDR2+1, page);
+    sfm_read_page(TM2_ADDR1, TM2_ADDR2+1, page2);
     // copy from data (int array) to page_data (char array)
     for (i=0 ; i<255 ; i++)
     {
-        page_data[i] = page[i] & 0x00ff;
+        page_data[i] = page2[i] & 0x00ff;
     }
     // force null-termination in last place, for safety
     page_data[255]=0;
@@ -225,9 +228,9 @@ void telem_lev2_read_metadata(telem_control_type* c)
             c->first_timestamp, c->last_timestamp);
     
     // scan page_data from string into data struct
-    sscanf(page_data, "%s", c->pagedata);
+    sscanf(page_data,"%s",c->pagedata);
     // if this is the special string, then replace with null
-    if (strcmp(c->pagedata,"empty") == 1) strcpy(c->pagedata,"");
+    if (strcmp(c->pagedata,"X") == 1) strcpy(c->pagedata,"");
 }
 
 void telem_gather_lev0(telem_control_type* c)
@@ -331,7 +334,7 @@ void telem_gather_lev0(telem_control_type* c)
     // save the current page data to SFM to allow seamless restart
     if (c->pagedata[0]==0)
     {
-        strcpy(page_data,"empty");
+        strcpy(page_data,"X");
     }
     else
     {
@@ -436,7 +439,7 @@ void telem_gather_lev1(telem_control_type* c)
     // save the current page data to SFM to allow seamless restart
     if (c->pagedata[0]==0)
     {
-        strcpy(page_data,"empty");
+        strcpy(page_data,"X");
     }
     else
     {
@@ -541,7 +544,7 @@ void telem_gather_lev2(telem_control_type* c)
     // save the current page data to SFM to allow seamless restart
     if (c->pagedata[0]==0)
     {
-        strcpy(page_data,"empty");
+        strcpy(page_data,"X");
     }
     else
     {

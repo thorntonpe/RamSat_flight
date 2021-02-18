@@ -270,7 +270,7 @@ int SD_read_sector(LBA a, unsigned char *p)
     if (r == 0) // command accepted
     {
         // wait for a response
-        i=40000;
+        i=60000;
         do {
             r=write_spi1(0xff);
             if (r == DATA_START) break;
@@ -873,6 +873,8 @@ unsigned freadM( void * dest, unsigned size, MFILE *fp)
                     break;
             }
             // 2.2.2 load a sector of data
+            TMR1 = 0;
+            while(TMR1 < 100*TMR1MSEC);
             if ( !ReadDATA( fp))
                 break;
 

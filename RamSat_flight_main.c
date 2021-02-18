@@ -45,6 +45,12 @@ telem_control_type telem_lev2;   // Level 2 control data
 
 // global variable for position and attitude data
 position_attitude_type posatt;
+//long int sspx1[256], sspx2[256];
+//long int ssnx1[256], ssnx2[256];
+//long int sspy1[256], sspy2[256];
+//long int ssny1[256], sspn2[256];
+//long int ssz[256];
+
 
 // Global ISR variables for timed events
 // This flag gets set as each minute elapses
@@ -405,49 +411,53 @@ int main(void) {
     int telem_lev2_elapsed = 0;
     
     // read the telemetry configuration metadata from SFM
-    //telem_lev0_read_metadata(&telem_lev0);
-    //telem_lev1_read_metadata(&telem_lev1);
-    //telem_lev2_read_metadata(&telem_lev2);
+    telem_lev0_read_metadata(&telem_lev0);
+    telem_lev1_read_metadata(&telem_lev1);
+    telem_lev2_read_metadata(&telem_lev2);
+    
+    telem_lev0.is_active = 1;
+    telem_lev1.is_active = 1;
+    telem_lev2.is_active = 1;
     
     // initialize telemetry control data structures 
     // Level 0 telemetry control
-    telem_lev0.is_active = 1;         // telemetry initialized as active
-    telem_lev0.record_period = 1;     // 1-minute intervals per record
-    telem_lev0.rec_per_page = 60;     // one page for each hour
-    telem_lev0.page_per_block = 24;   // 24 pages (hours) between timestamps
-    telem_lev0.first_sector = 1;      // first sector to use for this telemetry level
-    telem_lev0.num_sectors = 10;      // number of sectors to use for this telemetry level
-    telem_lev0.record_count = 0;      // record counter
-    telem_lev0.page_count = 0;        // page counter (includes timestamp pages)
-    telem_lev0.first_timestamp[0]=0;  // initialize timestamps as null
-    telem_lev0.last_timestamp[0]=0;   // initialize timestamps as null
-    telem_lev0.pagedata[0]=0;         // initialize pagedata as null
+    //telem_lev0.is_active = 1;         // telemetry initialized as active
+    //telem_lev0.record_period = 1;     // 1-minute intervals per record
+    //telem_lev0.rec_per_page = 60;     // one page for each hour
+    //telem_lev0.page_per_block = 24;   // 24 pages (hours) between timestamps
+    //telem_lev0.first_sector = 1;      // first sector to use for this telemetry level
+    //telem_lev0.num_sectors = 10;      // number of sectors to use for this telemetry level
+    //telem_lev0.record_count = 0;      // record counter
+    //telem_lev0.page_count = 0;        // page counter (includes timestamp pages)
+    //telem_lev0.first_timestamp[0]=0;  // initialize timestamps as null
+    //telem_lev0.last_timestamp[0]=0;   // initialize timestamps as null
+    //telem_lev0.pagedata[0]=0;         // initialize pagedata as null
     
     // Level 1 telemetry control
-    telem_lev1.is_active = 1;         // telemetry initialized as active
-    telem_lev1.record_period = 2;     // 1-minute intervals per record
-    telem_lev1.rec_per_page = 1;     // one page for each hour
-    telem_lev1.page_per_block = 60;   // 24 pages (hours) between timestamps
-    telem_lev1.first_sector = 11;      // first sector to use for this telemetry level
-    telem_lev1.num_sectors = 1;      // number of sectors to use for this telemetry level
-    telem_lev1.record_count = 0;      // record counter
-    telem_lev1.page_count = 0;        // page counter (includes timestamp pages)
-    telem_lev1.first_timestamp[0]=0;  // initialize timestamps as null
-    telem_lev1.last_timestamp[0]=0;   // initialize timestamps as null
-    telem_lev1.pagedata[0]=0;         // initialize pagedata as null
+    //telem_lev1.is_active = 1;         // telemetry initialized as active
+    //telem_lev1.record_period = 2;     // 1-minute intervals per record
+    //telem_lev1.rec_per_page = 1;     // one page for each hour
+    //telem_lev1.page_per_block = 60;   // 24 pages (hours) between timestamps
+    //telem_lev1.first_sector = 11;      // first sector to use for this telemetry level
+    //telem_lev1.num_sectors = 1;      // number of sectors to use for this telemetry level
+    //telem_lev1.record_count = 0;      // record counter
+    //telem_lev1.page_count = 0;        // page counter (includes timestamp pages)
+    //telem_lev1.first_timestamp[0]=0;  // initialize timestamps as null
+    //telem_lev1.last_timestamp[0]=0;   // initialize timestamps as null
+    //telem_lev1.pagedata[0]=0;         // initialize pagedata as null
 
     // Level 2 telemetry control
-    telem_lev2.is_active = 1;         // telemetry initialized as active
-    telem_lev2.record_period = 1;     // 1-minute intervals per record
-    telem_lev2.rec_per_page = 10;     // one page for each hour
-    telem_lev2.page_per_block = 6;   // 24 pages (hours) between timestamps
-    telem_lev2.first_sector = 12;      // first sector to use for this telemetry level
-    telem_lev2.num_sectors = 1;      // number of sectors to use for this telemetry level
-    telem_lev2.record_count = 0;      // record counter
-    telem_lev2.page_count = 0;        // page counter (includes timestamp pages)
-    telem_lev2.first_timestamp[0]=0;  // initialize timestamps as null
-    telem_lev2.last_timestamp[0]=0;   // initialize timestamps as null
-    telem_lev2.pagedata[0]=0;         // initialize pagedata as null
+    //telem_lev2.is_active = 1;         // telemetry initialized as active
+    //telem_lev2.record_period = 1;     // 1-minute intervals per record
+    //telem_lev2.rec_per_page = 10;     // one page for each hour
+    //telem_lev2.page_per_block = 6;   // 24 pages (hours) between timestamps
+    //telem_lev2.first_sector = 12;      // first sector to use for this telemetry level
+    //telem_lev2.num_sectors = 1;      // number of sectors to use for this telemetry level
+    //telem_lev2.record_count = 0;      // record counter
+    //telem_lev2.page_count = 0;        // page counter (includes timestamp pages)
+    //telem_lev2.first_timestamp[0]=0;  // initialize timestamps as null
+    //telem_lev2.last_timestamp[0]=0;   // initialize timestamps as null
+    //telem_lev2.pagedata[0]=0;         // initialize pagedata as null
     
     // Some initialization for iMTQ
     // set the mtm time integration parameter
@@ -701,6 +711,7 @@ int main(void) {
                             
                         case 86: // Set telemetry is_active on/off (all levels)
                             CmdTelemIsActive(cmd_paramstr);
+                            break;
                             
                         case 90: // Set post-deployment timer flag (pre-flight)
                             CmdSetPDT();

@@ -1414,6 +1414,7 @@ int CmdConfigTelem0(char *paramstr)
     int n_param;    // number of parameters sent to this command
     int len;
     char page[256];
+    char page2[256];
     
     // set the initial state for level 0 telemetry 
     int record_period;     // 1-minute intervals per record
@@ -1447,9 +1448,9 @@ int CmdConfigTelem0(char *paramstr)
     sfm_write_page(TM0_ADDR1, TM0_ADDR2, page, len);
     
     // write special string for pagedata on next page
-    strcat(page,"empty");
-    len=strlen(page);
-    sfm_write_page(TM0_ADDR1, TM0_ADDR2+1, page, len);
+    sprintf(page2,"%s","X");
+    len=strlen(page2);
+    sfm_write_page(TM0_ADDR1, TM0_ADDR2+1, page2, len);
     
     // update the global variables so the new telemetry configuration takes
     // effect immediately
@@ -1462,7 +1463,7 @@ int CmdConfigTelem0(char *paramstr)
     telem_lev0.page_count = page_count;
     strcpy(telem_lev0.first_timestamp,"X");
     strcpy(telem_lev0.last_timestamp,"X");
-    strcpy(telem_lev0.pagedata,"empty");
+    strcpy(telem_lev0.pagedata,"X");
     
     // downlink status message
     sprintf(downlink_data,"RamSat: CmdConfigTelem0 successful.");
@@ -1477,6 +1478,7 @@ int CmdConfigTelem1(char *paramstr)
     int n_param;    // number of parameters sent to this command
     int len;
     char page[256];
+    char page2[256];
     
     // set the initial state for level 0 telemetry 
     int record_period;     // 1-minute intervals per record
@@ -1510,9 +1512,9 @@ int CmdConfigTelem1(char *paramstr)
     sfm_write_page(TM1_ADDR1, TM1_ADDR2, page, len);
     
     // write special string for pagedata on next page
-    strcat(page,"empty");
-    len=strlen(page);
-    sfm_write_page(TM1_ADDR1, TM1_ADDR2+1, page, len);
+    sprintf(page2,"%s","X");
+    len=strlen(page2);
+    sfm_write_page(TM1_ADDR1, TM1_ADDR2+1, page2, len);
     
     // update the global variables so the new telemetry configuration takes
     // effect immediately
@@ -1525,7 +1527,7 @@ int CmdConfigTelem1(char *paramstr)
     telem_lev1.page_count = page_count;
     strcpy(telem_lev1.first_timestamp,"X");
     strcpy(telem_lev1.last_timestamp,"X");
-    strcpy(telem_lev1.pagedata,"empty");
+    strcpy(telem_lev1.pagedata,"X");
     
     // downlink status message
     sprintf(downlink_data,"RamSat: CmdConfigTelem1 successful.");
@@ -1540,6 +1542,7 @@ int CmdConfigTelem2(char *paramstr)
     int n_param;    // number of parameters sent to this command
     int len;
     char page[256];
+    char page2[256];
     
     // set the initial state for level 0 telemetry 
     int record_period;     // 1-minute intervals per record
@@ -1573,9 +1576,9 @@ int CmdConfigTelem2(char *paramstr)
     sfm_write_page(TM2_ADDR1, TM2_ADDR2, page, len);
     
     // write special string for pagedata on next page
-    strcat(page,"empty");
-    len=strlen(page);
-    sfm_write_page(TM2_ADDR1, TM2_ADDR2+1, page, len);
+    sprintf(page2,"%s","X");
+    len=strlen(page2);
+    sfm_write_page(TM2_ADDR1, TM2_ADDR2+1, page2, len);
     
     // update the global variables so the new telemetry configuration takes
     // effect immediately
@@ -1588,7 +1591,7 @@ int CmdConfigTelem2(char *paramstr)
     telem_lev2.page_count = page_count;
     strcpy(telem_lev2.first_timestamp,"X");
     strcpy(telem_lev2.last_timestamp,"X");
-    strcpy(telem_lev2.pagedata,"empty");
+    strcpy(telem_lev2.pagedata,"X");
     
     // downlink status message
     sprintf(downlink_data,"RamSat: CmdConfigTelem2 successful.");
