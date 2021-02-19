@@ -23,6 +23,7 @@
 #include "wmm.h"
 #include "position_attitude.h"
 #include "sun_geometry.h"
+#include "adc.h"
 #include "triad.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -32,11 +33,11 @@
 // global variable for initialization data
 init_data_type init_data; // data structure for peripheral initialization
 
-// global variable for the current TLE
-tle_t tle;
-
 //global variable for the current beacon
 char beacon_msg[260];
+
+// global variable for the current Two-Line-Element (TLE)
+tle_t tle;
 
 // global variables for telemetry control
 telem_control_type telem_lev0;   // Level 0 control data
@@ -45,12 +46,12 @@ telem_control_type telem_lev2;   // Level 2 control data
 
 // global variable for position and attitude data
 position_attitude_type posatt;
+
 //long int sspx1[256], sspx2[256];
 //long int ssnx1[256], ssnx2[256];
 //long int sspy1[256], sspy2[256];
 //long int ssny1[256], sspn2[256];
 //long int ssz[256];
-
 
 // Global ISR variables for timed events
 // This flag gets set as each minute elapses
@@ -209,45 +210,22 @@ void __attribute((interrupt,shadow,no_auto_psv)) _U2RXInterrupt (void)
 }
 
 int main(void) {
-    // data structures for iMTQ (magnetorquer)
-    imtq_resp_common imtq_common;       // iMTQ response from every command
-    imtq_resp_state imtq_state;         // iMTQ state data
-    imtq_resp_mtm imtq_calib_mtm;       // iMTQ calibrated magnetometer data
-    imtq_resp_mtm imtq_raw_mtm;         // iMTQ raw magnetometer data
-    imtq_resp_integ imtq_integ;         // iMTQ MTM integration time parameter
-
-    // flags controlling the main program loop
-    int isNewTLE = 0;   // flag is set immediately after a new TLE is uplinked
-    int isGoodTLE = 0;  // flag is set when a current TLE is available
-    
-    // Variables used in orbital prediction
-    double jd;          // The current julian date, from RTC
-    double t_since;     // Time since epoch of current TLE, in minutes
-    double sat_params[N_SAT_PARAMS]; // parameters needed by the SGP4 code
-    double pos[3];      // Satellite position vector 
-    double lat;         // current latitude (radians)
-    double lon;         // current longitude (radians)
-    double elev;        // current elevation of orbit (km)
-    int sgp4_ret;       // return value for the main SGP4 call
-    double f, f2;       // temporary variables for ellipsoid correction
-    double cor_lat;     // correct latitude for ellipsoid
-    double lst;         // local sidereal time
-    double b_locx, b_locy, b_locz;  // magnetic field in local tangential coords
-    double Bx, By, Bz;  // Magnetic field in ECI coordinates
-    double mbody[3];    // unit vector magnetic field in body frame
-    double sbody[3];    // unit vector sun in body frame
-    double mearth[3];   // unit vector magnetic field in ECI frame
-    double searth[3];   // unit vector sun in ECI frame
-    double mbodymag, sbodymag, mearthmag, searthmag;
-    double coslat,sinlat,coslst,sinlst; // for intermediate calculations
-    double t1;          // temporary variable
-    
+    // He-100 communication variables
     unsigned char he100_response[8];
     char downlink_msg[260]; // Message to be downlinked by RamSat
 
-    // precalculate ellipsoid flattening parameter
-    f = 0.003352811;    // flattening parameter for ellipsoid
-    f2 = (1.0-f)*(1.0-f);
+    // flags controlling the main program loop
+    int isNewTLE = 0;   // flag is set immediately after a new TLE is uplinked
+    int m[8] = {1,1,1,1,1,1,1,1};   // sun sensor mask (1=use, 0=reject)
+    
+    // track maximum value for sun-sensor vectors
+    // initialize with a small value so it can be used for division
+    double sxybodymag_max = 1.0;
+    float bcr3_thresh = 4.0; // threshold voltage for -Z panel indicating sunlight
+    
+    // precalculated ellipsoid flattening parameter
+    double f = 0.003352811;    // flattening parameter for ellipsoid
+    double f2 = (1.0-f)*(1.0-f);
     
     // Initialize the PIC24 timers
     // Initialize TIMER1 (16-bit), using system clock and 1:256 prescalar
@@ -405,6 +383,7 @@ int main(void) {
         U2STAbits.OERR = 0;
     }
 
+    // Configure and initialize the multi-level saved telemetry
     // initialize the elapsed time counters for multi-level telemetry
     int telem_lev0_elapsed = 0;
     int telem_lev1_elapsed = 0;
@@ -415,53 +394,16 @@ int main(void) {
     telem_lev1_read_metadata(&telem_lev1);
     telem_lev2_read_metadata(&telem_lev2);
     
+    // all telemetry levels are active by default on power-up
     telem_lev0.is_active = 1;
     telem_lev1.is_active = 1;
     telem_lev2.is_active = 1;
     
-    // initialize telemetry control data structures 
-    // Level 0 telemetry control
-    //telem_lev0.is_active = 1;         // telemetry initialized as active
-    //telem_lev0.record_period = 1;     // 1-minute intervals per record
-    //telem_lev0.rec_per_page = 60;     // one page for each hour
-    //telem_lev0.page_per_block = 24;   // 24 pages (hours) between timestamps
-    //telem_lev0.first_sector = 1;      // first sector to use for this telemetry level
-    //telem_lev0.num_sectors = 10;      // number of sectors to use for this telemetry level
-    //telem_lev0.record_count = 0;      // record counter
-    //telem_lev0.page_count = 0;        // page counter (includes timestamp pages)
-    //telem_lev0.first_timestamp[0]=0;  // initialize timestamps as null
-    //telem_lev0.last_timestamp[0]=0;   // initialize timestamps as null
-    //telem_lev0.pagedata[0]=0;         // initialize pagedata as null
-    
-    // Level 1 telemetry control
-    //telem_lev1.is_active = 1;         // telemetry initialized as active
-    //telem_lev1.record_period = 2;     // 1-minute intervals per record
-    //telem_lev1.rec_per_page = 1;     // one page for each hour
-    //telem_lev1.page_per_block = 60;   // 24 pages (hours) between timestamps
-    //telem_lev1.first_sector = 11;      // first sector to use for this telemetry level
-    //telem_lev1.num_sectors = 1;      // number of sectors to use for this telemetry level
-    //telem_lev1.record_count = 0;      // record counter
-    //telem_lev1.page_count = 0;        // page counter (includes timestamp pages)
-    //telem_lev1.first_timestamp[0]=0;  // initialize timestamps as null
-    //telem_lev1.last_timestamp[0]=0;   // initialize timestamps as null
-    //telem_lev1.pagedata[0]=0;         // initialize pagedata as null
-
-    // Level 2 telemetry control
-    //telem_lev2.is_active = 1;         // telemetry initialized as active
-    //telem_lev2.record_period = 1;     // 1-minute intervals per record
-    //telem_lev2.rec_per_page = 10;     // one page for each hour
-    //telem_lev2.page_per_block = 6;   // 24 pages (hours) between timestamps
-    //telem_lev2.first_sector = 12;      // first sector to use for this telemetry level
-    //telem_lev2.num_sectors = 1;      // number of sectors to use for this telemetry level
-    //telem_lev2.record_count = 0;      // record counter
-    //telem_lev2.page_count = 0;        // page counter (includes timestamp pages)
-    //telem_lev2.first_timestamp[0]=0;  // initialize timestamps as null
-    //telem_lev2.last_timestamp[0]=0;   // initialize timestamps as null
-    //telem_lev2.pagedata[0]=0;         // initialize pagedata as null
-    
-    // Some initialization for iMTQ
+    // Initialize iMTQ
     // set the mtm time integration parameter
-    // (new value is 6, which corresponds to 80 ms)
+    // (current value is 6, which corresponds to 80 ms)
+    imtq_resp_common imtq_common;       // iMTQ response from every command
+    imtq_resp_integ imtq_integ;         // iMTQ MTM integration time parameter
     imtq_set_mtm_integ(&imtq_common, &imtq_integ, 6);
     
     // variables used by the radio command and control interface
@@ -759,6 +701,8 @@ int main(void) {
         // enter the main work segment of the program loop
         
         // If the TLE was just uplinked, initialize the SGP4 parameters
+        double sat_params[N_SAT_PARAMS]; // parameters needed by the SGP4 code
+        int isGoodTLE;                   // flag for position-attitude calculations
         if (isNewTLE)
         {
             SGP4_init(sat_params, &tle);
@@ -771,43 +715,104 @@ int main(void) {
         if (isGoodTLE)
         {
             // Read the RTC and format as a julian date.
+            double jd;          // The current julian date, from RTC
             get_juliandate(&jd);
+            
             // Calculate the time since epoch of current TLE, in minutes.
+            double t_since;     
             t_since = (jd - tle.epoch) * 1440.;
+            
             // call the SGP4 routine to calculate position (not calculating velocity)
+            // RamSat position in ECI coordinates is given by:
+            // pos[0]=X, pos[1]=Y, pos[2]=Z
+            double pos[3];
+            int sgp4_ret;       // return value for the main SGP4 call
             sgp4_ret = SGP4(t_since, &tle, sat_params, pos, NULL);
+            
             // if no error in SGP4 call, continue with orbital prediction
             if (!sgp4_ret)
             {
+                // normalize the ECI RamSat position vector = pearth
+                double pearthmag = sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
+                double pearth[3];
+                if (pearthmag)
+                {
+                    pearth[0]=pos[0]/pearthmag;
+                    pearth[1]=pos[1]/pearthmag;
+                    pearth[2]=pos[2]/pearthmag;
+                }
+                
+                // calculate sun position in ECI coordinates
+                double sunx_eci, suny_eci, sunz_eci;
+                sun_ECI(jd, &sunx_eci, &suny_eci, &sunz_eci);
+                
+                // normalize the ECI sun vector = searth
+                double searthmag = sqrt(sunx_eci*sunx_eci + suny_eci*suny_eci + sunz_eci*sunz_eci);
+                double searth[3];
+                if (searthmag)
+                {
+                    searth[0]=sunx_eci/searthmag;
+                    searth[1]=suny_eci/searthmag;
+                    searth[2]=sunz_eci/searthmag;
+                }
+                else
+                {
+                    searth[0] = 0.0;
+                    searth[1] = 0.0;
+                    searth[2] = 0.0;
+                }
+                
+                // Once the searth and pearth unit vectors are known,
+                // it is possible to calculate the Ramsat-Earth-Sun angle (res)
+                // as the dot product between the two vectors.
+                // if cos_res is positive, res is acute and RamSat is sunlit.
+                // if cos_res is negative, res is obtuse and RamSat is in Earth's shadow
+                // if cos_res is 0, res is right angle and RamSat is transitioning
+                double cos_res = pearth[0]*searth[0] + pearth[1]*searth[1] + pearth[2]*searth[2];
+                double res = acos(cos_res);
+                
                 // estimate satellite's groundtrack longitude, latitude, and orbit elevation
                 // lat and lon are in radians, elev is km above mean radius
-                // lst (local sidereal time) is in [units]
+                // lst (local sidereal time) is in radians
+                double lat;         // current latitude (radians)
+                double lon;         // current longitude (radians)
+                double elev;        // current elevation of orbit (km)
+                double lst;         // local sidereal time (radians)
                 sat_lon_lat_elev(jd, pos, &lon, &lat, &elev, &lst);
+                
                 // latitude corrected for ellipsoid (also in radians))
-                cor_lat = atan(tan(lat)/f2);
+                double cor_lat = atan(tan(lat)/f2);
                 
-                // hardwired lon, lat, elev at RMS
-                //lon = -1.47085; // 84.27333 W
-                //lat = 0.62852; // 36.01167 N
-                //elev = 0.259; // 850 feet AMSL
-                
+                // calculate the decimal year, needed for WMM routine
+                // based on known julian date for 1 Jan 2021 (00:00:00 UTC)
+                // using 365.0 days per year since no leap years during RamSat mission
+                // the reference JD was obtained from:
+                // www.onlineconversion.com/julian_date.htm
+                double jd_jan1_2021 = 2459215.5;
+                double days_since_ref = jd - jd_jan1_2021;
+                double decimal_year = 2021.0 + (days_since_ref/365.0);
+            
                 // estimate Earth's magnetic field vector at this location
                 // returns values in local tangential coordinates
                 // Note: latitude is geocentric, not geodetic
                 // Note: elevation is distance from center of Earth
-                calc_WMM(2020.8, lon, lat, elev+6378.135, &b_locx, &b_locy, &b_locz);
+                double b_locx, b_locy, b_locz;  // magnetic field in local tangential coords
+                calc_WMM(decimal_year, lon, lat, elev+6378.135, &b_locx, &b_locy, &b_locz);
                 
                 // convert magnetic field local tangential coordinates to ECI coordinates
-                coslat = cos(lat);
-                sinlat = sin(lat);
-                coslst = cos(lst);
-                sinlst = sin(lst);
-                t1 = b_locz*coslat + b_locx*sinlat;
+                double Bx, By, Bz;  // local magnetic field in ECI coordinates
+                double coslat = cos(lat); // temp for repeated calculations
+                double sinlat = sin(lat); // temp for repeated calculations
+                double coslst = cos(lst); // temp for repeated calculations
+                double sinlst = sin(lst); // temp for repeated calculations
+                double t1 = b_locz*coslat + b_locx*sinlat; // temp
                 Bx = t1*coslst - b_locy*sinlst;
                 By = t1*sinlst + b_locy*coslst;
                 Bz = b_locz*sinlat + b_locx*coslat;
-                // normalize the ECI magnetic field vector
-                mearthmag = sqrt(Bx*Bx + By*By + Bz*Bz);
+                
+                // normalize the ECI magnetic field vector = mearth
+                double mearthmag = sqrt(Bx*Bx + By*By + Bz*Bz);
+                double mearth[3];   // unit vector magnetic field in ECI frame
                 if (mearthmag)
                 {
                     mearth[0] = Bx/mearthmag;
@@ -828,11 +833,13 @@ int main(void) {
                 TMR1 = 0;
                 while (TMR1 <= 82 * TMR1MSEC);
                 // get the calibrated MTM data
+                imtq_resp_mtm imtq_calib_mtm;       // iMTQ calibrated magnetometer data
                 imtq_get_calib_mtm(&imtq_common, &imtq_calib_mtm);
                 // normalize the body magnetic field vector
-                mbodymag = sqrt(imtq_calib_mtm.x*imtq_calib_mtm.x + 
+                double mbodymag = sqrt(imtq_calib_mtm.x*imtq_calib_mtm.x + 
                         imtq_calib_mtm.y*imtq_calib_mtm.y +
                         imtq_calib_mtm.z*imtq_calib_mtm.z);
+                double mbody[3]; // unit vector magnetic field in frame coordinates
                 if (mbodymag)
                 {
                     mbody[0] = imtq_calib_mtm.x/mbodymag;
@@ -846,34 +853,61 @@ int main(void) {
                     mbody[2] = 0.0;
                 }
                 
-                // sun geometry calculations
-                double sunx_eci, suny_eci, sunz_eci;
-                sun_ECI(jd, &sunx_eci, &suny_eci, &sunz_eci);
-                // normalize the ECI sun vector
-                searthmag = sqrt(sunx_eci*sunx_eci + suny_eci*suny_eci + sunz_eci*sunz_eci);
-                if (searthmag)
+                // only try to use sun sensors if in sunlight
+                double sx_body, sy_body, sz_body;
+                if (cos_res > 0.0)
                 {
-                    searth[0]=sunx_eci/searthmag;
-                    searth[1]=suny_eci/searthmag;
-                    searth[2]=sunz_eci/searthmag;
+                    // read the sun sensors (2 each for +x, -x, +y, -y)
+                    adc_scan_all();
+                    // m is is user_defined mask (0 or 1) allowing rejection of individual sensors
+                    // +X face = ADC4, ADC0
+                    double spx = ((double)ADC1BUF4*m[0] + (double)ADC1BUF0*m[1])/(double)(m[0]+m[1]);
+                    // -X face = ADC6, ADC2 
+                    double snx = ((double)ADC1BUF6*m[2] + (double)ADC1BUF2*m[3])/(double)(m[2]+m[3]);
+                    // +Y face = ADC3, ADC7
+                    double spy = ((double)ADC1BUF3*m[4] + (double)ADC1BUF7*m[5])/(double)(m[4]+m[5]);
+                    // -Y face = ADC5, ADC1
+                    double sny = ((double)ADC1BUF5*m[6] + (double)ADC1BUF1*m[7])/(double)(m[6]+m[7]);
+
+                    // the difference between positive and negative faces should give
+                    // a directional signal for that axis
+                    sx_body = spx - snx;
+                    sy_body = spy - sny;
+                    // get the magnitude of XY sun vector
+                    double sxybodymag = sqrt(sx_body*sx_body + sy_body*sy_body);
+                    // update maximum value for this magnitude
+                    if (sxybodymag > sxybodymag_max) sxybodymag_max = sxybodymag;
+                    // estimate the Z magnitude from xymax*sin(arccos(xy/xymax))
+                    if (sxybodymag_max)
+                    {
+                        double t2 = sxybodymag/sxybodymag_max;
+                        sz_body=sxybodymag_max * sqrt(1.0 - t2*t2);
+                    }
+                    else
+                    {
+                        sz_body = 0.0;
+                    }
+                    // if -Z panel is above threshold voltage, assume
+                    // the z-coordinate for sun position is negative
+                    float nzv = eps_get_bcr3v();
+                    if (nzv > bcr3_thresh)
+                    {
+                        sz_body = -sz_body;
+                    }
                 }
-                else
+                else // not in sunlight
                 {
-                    searth[0] = 0.0;
-                    searth[1] = 0.0;
-                    searth[2] = 0.0;
+                    sx_body = 0.0;
+                    sy_body = 0.0;
+                    sz_body = 0.0;
                 }
-                
-                // normalize the sun vector in frame coordinates
-                double sx=-0.8285;
-                double sy=0.5522;
-                double sz=-0.0955;
-                sbodymag=sqrt(sx*sx + sy*sy + sz*sz);
+                double sbodymag=sqrt(sx_body*sx_body + sy_body*sy_body + sz_body*sz_body);
+                double sbody[3];
                 if (sbodymag)
                 {
-                    sbody[0]=sx/sbodymag;
-                    sbody[1]=sy/sbodymag;
-                    sbody[2]=sz/sbodymag;
+                    sbody[0]=sx_body/sbodymag;
+                    sbody[1]=sy_body/sbodymag;
+                    sbody[2]=sz_body/sbodymag;
                 }
                 else
                 {
@@ -883,14 +917,6 @@ int main(void) {
                 }
                 double q0,q1,q2,q3,dq0,dq1,dq2,dq3;
                 int triad_err = triad(mbody,sbody,mearth,searth,&q0,&q1,&q2,&q3,&dq0,&dq1,&dq2,&dq3);
-                
-                // test code packet for mearth, searth, mbody
-                //_U2RXIE = 0;
-                //sprintf(downlink_msg,"RamSat: mearth= %.3lf, %.3lf, %.3lf searth= %.3lf, %.3lf, %.3lf mbody= %.3lf, %.3lf, %.3lf",
-                //        mearth[0], mearth[1], mearth[2], searth[0], searth[1], searth[2], mbody[0], mbody[1], mbody[2]);
-                //he100_transmit_packet(he100_response, downlink_msg);
-                //isGoodTLE = 0;
-                //_U2RXIE = 1;
                 
                 // once all orbital and attitude calculations are complete
                 // all angles are converted from radians to degrees
@@ -925,6 +951,7 @@ int main(void) {
                 posatt.sf_x = sbody[0];
                 posatt.sf_y = sbody[1];
                 posatt.sf_z = sbody[2];
+                posatt.cos_res = cos_res;
                 posatt.q0 = q0;
                 posatt.q1=q1;
                 posatt.q2=q2;

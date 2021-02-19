@@ -5,6 +5,9 @@
  * Created:    2 January 2021
  */
 
+// constants
+#define PI 3.141592653589793238462643383279502884197
+
 // RamSat position and attitude information at specified JD
 typedef struct
 {
@@ -39,6 +42,7 @@ typedef struct
     double sf_x;        // unit sun vector X in frame coordinates
     double sf_y;        // unit sun vector Y in frame coordinates
     double sf_z;        // unit sun vector Z in frame coordinates
+    double cos_res;     // cosine of RamSat-Earth-Sun angle (+=sunlit)
     double q0;
     double q1;
     double q2;
