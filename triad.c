@@ -30,16 +30,8 @@
 
 
 // Define triad function
-int triad(double *marr, double *sarr, double *iarr, double *jarr, double *q0, double *q1, double *q2, double *q3, double *qd0, double *qd1, double *qd2, double *qd3)
+void triad(double *marr, double *sarr, double *iarr, double *jarr, double *q0, double *q1, double *q2, double *q3, double *att)
 {
-    double lq0;
-    //double lqd0;
-    
-    // Calculate the magnitudes of each vector array
-    double magnorm = sqrt(marr[0]*marr[0]+marr[1]*marr[1]+marr[2]*marr[2]);
-    double sunnorm = sqrt(sarr[0]*sarr[0]+sarr[1]*sarr[1]+sarr[2]*sarr[2]);
-    double igrfnorm = sqrt(iarr[0]*iarr[0]+iarr[1]*iarr[1]+iarr[2]*iarr[2]);
-    double jspocnorm = sqrt(jarr[0]*jarr[0]+jarr[1]*jarr[1]+jarr[2]*jarr[2]);
 
 /**********************************************************************************************
  * Use the TRIAD algorithm to create the rotation matrix that relates the two frames and      *
@@ -68,18 +60,14 @@ int triad(double *marr, double *sarr, double *iarr, double *jarr, double *q0, do
 
     // Perform the cross product:  magarray x sunarray to get body triad 2
     // Then normalize
-    t2body[0] = ((marr[1]*sarr[2]) - (marr[2]*sarr[1]))/(magnorm*sunnorm);
-    t2body[1] = ((marr[2]*sarr[0]) - (marr[0]*sarr[2]))/(magnorm*sunnorm);
-    t2body[2] = ((marr[0]*sarr[1]) - (marr[1]*sarr[0]))/(magnorm*sunnorm);
+    t2body[0] = ((marr[1]*sarr[2]) - (marr[2]*sarr[1]));
+    t2body[1] = ((marr[2]*sarr[0]) - (marr[0]*sarr[2]));
+    t2body[2] = ((marr[0]*sarr[1]) - (marr[1]*sarr[0]));
 
     // Perform the cross product:  t1body x t2body to get body triad 3
     t3body[0] = (t1body[1]*t2body[2]) - (t1body[2]*t2body[1]);
     t3body[1] = (t1body[2]*t2body[0]) - (t1body[0]*t2body[2]);
     t3body[2] = (t1body[0]*t2body[1]) - (t1body[1]*t2body[0]);
-
-    //qdbody[0] = 0;
-    //qdbody[1] = 0;
-    //qdbody[2] = 1;
 
     // Input the known most accurate earth vector for earth triad 1
     t1earth[0] = iarr[0];
@@ -87,11 +75,10 @@ int triad(double *marr, double *sarr, double *iarr, double *jarr, double *q0, do
     t1earth[2] = iarr[2];
 
     // Perform the cross product:  igrfarray x jspocarray to get earth triad 2
-    // Then normalize
     
-    t2earth[0] = ((iarr[1]*jarr[2]) - (iarr[2]*jarr[1]))/(igrfnorm*jspocnorm);
-    t2earth[1] = ((iarr[2]*jarr[0]) - (iarr[0]*jarr[2]))/(igrfnorm*jspocnorm);
-    t2earth[2] = ((iarr[0]*jarr[1]) - (iarr[1]*jarr[0]))/(igrfnorm*jspocnorm);
+    t2earth[0] = ((iarr[1]*jarr[2]) - (iarr[2]*jarr[1]));
+    t2earth[1] = ((iarr[2]*jarr[0]) - (iarr[0]*jarr[2]));
+    t2earth[2] = ((iarr[0]*jarr[1]) - (iarr[1]*jarr[0]));
 
     // Perform the cross product:  t1earth x t2earth to get earth triad 3
     t3earth[0] = (t1earth[1]*t2earth[2]) - (t1earth[2]*t2earth[1]);
@@ -105,59 +92,59 @@ int triad(double *marr, double *sarr, double *iarr, double *jarr, double *q0, do
      * column vectors.  Then we multiply them in the order matbody*matearth.       *
      * *****************************************************************************/
     
-    //double qdmatbody[3][3] = { {qdbody[0], qdbody[0], qdbody[0]},
-    //                           {qdbody[1], qdbody[1], qdbody[1]},
-    //                           {qdbody[2], qdbody[2], qdbody[2]} };
-    //double matbody[3][3] = { {t1body[0], t2body[0], t3body[0]},
-    //                         {t1body[1], t2body[1], t3body[1]},
-    //                         {t1body[2], t2body[2], t3body[2]} };
-    //double matearth[3][3] = { {t1earth[0], t2earth[0], t3earth[0]},
-    //                          {t1earth[1], t2earth[1], t3earth[1]},
-    //                          {t1earth[2], t2earth[2], t3earth[2]} };
-
-    // Declare the desired attitude matrix and multiply the qdbody and earth matrices to get
-    // its elements.
-    //double dattmat[3][3] = { {((qdbody[0]*t1earth[0])+(qdbody[0]*t1earth[1])+(qdbody[0]*t1earth[2])), 
-    //                        ((qdbody[0]*t2earth[0])+(qdbody[0]*t2earth[1])+(qdbody[0]*t2earth[2])), 
-    //                         ((qdbody[0]*t3earth[0])+(qdbody[0]*t3earth[1])+(qdbody[0]*t3earth[2]))},
-    //                        {((qdbody[1]*t1earth[0])+(qdbody[1]*t1earth[1])+(qdbody[1]*t1earth[2])), 
-    //                         ((qdbody[1]*t2earth[0])+(qdbody[1]*t2earth[1])+(qdbody[1]*t2earth[2])), 
-    //                         ((qdbody[1]*t3earth[0])+(qdbody[1]*t3earth[1])+(qdbody[1]*t3earth[2]))},
-    //                        {((qdbody[2]*t1earth[0])+(qdbody[2]*t1earth[1])+(qdbody[2]*t1earth[2])), 
-    //                         ((qdbody[2]*t2earth[0])+(qdbody[2]*t2earth[1])+(qdbody[2]*t2earth[2])), 
-    //                         ((qdbody[2]*t3earth[0])+(qdbody[2]*t3earth[1])+(qdbody[2]*t3earth[2]))} };
     // Declare the attitude matrix and multiply the body and earth matrices to get
     // its elements.
-    double attmat[3][3] = { {((t1body[0]*t1earth[0])+(t2body[0]*t1earth[1])+(t3body[0]*t1earth[2])), 
-                             ((t1body[0]*t2earth[0])+(t2body[0]*t2earth[1])+(t3body[0]*t2earth[2])), 
-                             ((t1body[0]*t3earth[0])+(t2body[0]*t3earth[1])+(t3body[0]*t3earth[2]))},
-                            {((t1body[1]*t1earth[0])+(t2body[1]*t1earth[1])+(t3body[1]*t1earth[2])), 
-                             ((t1body[1]*t2earth[0])+(t2body[1]*t2earth[1])+(t3body[1]*t2earth[2])), 
-                             ((t1body[1]*t3earth[0])+(t2body[1]*t3earth[1])+(t3body[1]*t3earth[2]))},
-                            {((t1body[2]*t1earth[0])+(t2body[2]*t1earth[1])+(t3body[2]*t1earth[2])), 
-                             ((t1body[2]*t2earth[0])+(t2body[2]*t2earth[1])+(t3body[2]*t2earth[2])), 
-                             ((t1body[2]*t3earth[0])+(t2body[2]*t3earth[1])+(t3body[2]*t3earth[2]))} };
+    double attmat[3][3] = { {((t1body[0]*t1earth[0])+(t2body[0]*t2earth[0])+(t3body[0]*t3earth[0])), 
+                             ((t1body[0]*t1earth[1])+(t2body[0]*t2earth[1])+(t3body[0]*t3earth[1])), 
+                             ((t1body[0]*t1earth[2])+(t2body[0]*t2earth[2])+(t3body[0]*t3earth[2]))},
+                            {((t1body[1]*t1earth[0])+(t2body[1]*t2earth[0])+(t3body[1]*t3earth[0])), 
+                             ((t1body[1]*t1earth[1])+(t2body[1]*t2earth[1])+(t3body[1]*t3earth[1])), 
+                             ((t1body[1]*t1earth[2])+(t2body[1]*t2earth[2])+(t3body[1]*t3earth[2]))},
+                            {((t1body[2]*t1earth[0])+(t2body[2]*t2earth[0])+(t3body[2]*t3earth[0])), 
+                             ((t1body[2]*t1earth[1])+(t2body[2]*t2earth[1])+(t3body[2]*t3earth[1])), 
+                             ((t1body[2]*t1earth[2])+(t2body[2]*t2earth[2])+(t3body[2]*t3earth[2]))} };
     
-   /*******************************************************************************
+    /*******************************************************************************
     * Extract the quaternion from the attmat and dattmat using formulation        *
     *from "An Inverse Dynamics Satellite Attitude Determination and Control       *
     *System with Autonomous Calibration" Omar et al. 2015. pdf available at       *
     *pdfs.semanticscholar.org/1072/6477c7d2a90b9797452a1a045f27a5406e6d.pdf       *
     *******************************************************************************/
-   
-    lq0 = sqrt((attmat[0][0]+attmat[1][1]+attmat[2][2]+1)/4);
+    
+    double lq0 = sqrt((attmat[0][0]+attmat[1][1]+attmat[2][2]+1)/4);
     *q1 = (attmat[2][1]-attmat[1][2])/(4*lq0);
     *q2 = (attmat[0][2]-attmat[2][0])/(4*lq0);
     *q3 = (attmat[1][0]-attmat[0][1])/(4*lq0);
     *q0 = lq0;
-
     
-    //lqd0 = sqrt((dattmat[0][0]+dattmat[1][1]+dattmat[2][2]+1)/4);
-    //*qd1 = (dattmat[2][1]-dattmat[1][2])/(4*lqd0);
-    //*qd2 = (dattmat[0][2]-dattmat[2][0])/(4*lqd0);
-    //*qd3 = (dattmat[1][0]-dattmat[0][1])/(4*lqd0);
-    //*qd0 = lqd0;
+    // export the attitude matrix as the function return value in att[9] = 
+    // [[row1],[row2],[row3]]
+    int i,j;
+    int k = 0;
+    for (i=0 ; i<3 ; i++)
+    {
+        for (j=0 ; j<3 ; j++)
+        {
+            att[k]=attmat[i][j];
+            k++;
+        }
+    }
+    
+}
 
+void rbody(double *att, double *in_vector, double *out_vector)
+{
+    out_vector[0] = in_vector[0]*att[0] + in_vector[1]*att[1] + in_vector[2]*att[2];
+    out_vector[1] = in_vector[0]*att[3] + in_vector[1]*att[4] + in_vector[2]*att[5];
+    out_vector[2] = in_vector[0]*att[6] + in_vector[1]*att[7] + in_vector[2]*att[8];
+}
 
-    return 0;  
+void desired_q(double *att, double *nadir_eci, double *q)
+{
+    double nadir_body[3];
+    rbody(att, nadir_eci, nadir_body);
+    
+    q[0]=nadir_body[0];
+    q[1]=nadir_body[1];
+    q[2]=nadir_body[2];
 }

@@ -836,15 +836,16 @@ int main(void) {
                 imtq_resp_mtm imtq_calib_mtm;       // iMTQ calibrated magnetometer data
                 imtq_get_calib_mtm(&imtq_common, &imtq_calib_mtm);
                 // normalize the body magnetic field vector
-                double mbodymag = sqrt(imtq_calib_mtm.x*imtq_calib_mtm.x + 
-                        imtq_calib_mtm.y*imtq_calib_mtm.y +
-                        imtq_calib_mtm.z*imtq_calib_mtm.z);
+                double mtm_x = (double)imtq_calib_mtm.x;
+                double mtm_y = (double)imtq_calib_mtm.y;
+                double mtm_z = (double)imtq_calib_mtm.z;
+                double mbodymag = sqrt(mtm_x*mtm_x + mtm_y*mtm_y + mtm_z*mtm_z);
                 double mbody[3]; // unit vector magnetic field in frame coordinates
                 if (mbodymag)
                 {
-                    mbody[0] = imtq_calib_mtm.x/mbodymag;
-                    mbody[1] = imtq_calib_mtm.y/mbodymag;
-                    mbody[2] = imtq_calib_mtm.z/mbodymag;
+                    mbody[0] = mtm_x/mbodymag;
+                    mbody[1] = mtm_y/mbodymag;
+                    mbody[2] = mtm_z/mbodymag;
                 }
                 else
                 {
@@ -915,8 +916,23 @@ int main(void) {
                     sbody[1] = 0.0;
                     sbody[2] = 0.0;
                 }
-                double q0,q1,q2,q3,dq0,dq1,dq2,dq3;
-                int triad_err = triad(mbody,sbody,mearth,searth,&q0,&q1,&q2,&q3,&dq0,&dq1,&dq2,&dq3);
+                
+                double q0,q1,q2,q3;
+                double att[9];
+                triad(mbody,sbody,mearth,searth,&q0,&q1,&q2,&q3, att);
+                // define nadir-pointing unit vector in ECI coordinates
+                double nadir_eci[3];
+                nadir_eci[0] = -pearth[0];
+                nadir_eci[1] = -pearth[1];
+                nadir_eci[2] = -pearth[2];
+                double nadir_body[3];
+                desired_q(att, mearth, nadir_body);
+                
+                sprintf(downlink_msg,"RamSat: attitude test: %.3lf %.3lf %.3lf  : %.3lf %.3lf %.3lf ",
+                        mbody[0], mbody[1], mbody[2], nadir_body[0], nadir_body[1], nadir_body[2]);
+                he100_transmit_packet(he100_response, downlink_msg);
+                
+                isGoodTLE = 0;
                 
                 // once all orbital and attitude calculations are complete
                 // all angles are converted from radians to degrees

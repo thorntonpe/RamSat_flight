@@ -6,7 +6,9 @@
  */
 
 // function prototypes 
-int triad(double *marr, double *sarr, double *iarr, double *jarr, double *q0, double *q1, double *q2, double *q3, double *qd0, double *qd1, double *qd2, double *qd3);
+void triad(double *marr, double *sarr, double *iarr, double *jarr, double *q0, double *q1, double *q2, double *q3, double *att);
+void rbody(double *att, double *in_vector, double *out_vector);
+void desired_q(double *att, double *nadir_eci, double *q);
 
 
 

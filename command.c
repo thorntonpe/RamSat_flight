@@ -348,7 +348,7 @@ int CmdFileDumpRange(char *paramstr)
     if (fp1->size%B_SIZE) npackets++;
     
     // send a message with filename, size, and number of packets to expect
-    sprintf(downlink_data,"RamSat: %s is open to read: Size=%ld: npackets=%d first_packet=%d last_packet=%d",
+    sprintf(downlink_data,"RamSatDR: %s is open to read: Size=%ld: npackets=%d first_packet=%d last_packet=%d",
             fname,fp1->size,npackets,first_packet,last_packet);
     he100_transmit_packet(he100_response, downlink_data);
 
@@ -467,7 +467,7 @@ int CmdFileDumpOnePacket(char *paramstr)
     npackets = fp1->size/B_SIZE;
     if (fp1->size%B_SIZE) npackets++;
     // send a message with filename, size, and number of packets to expect
-    sprintf(downlink_data,"RamSat: %s is open to read packet: Size=%ld: npackets=%u",fname,fp1->size,npackets);
+    sprintf(downlink_data,"RamSatSP: %s is open to read packet: Size=%ld: npackets=%u",fname,fp1->size,npackets);
     he100_transmit_packet(he100_response, downlink_data);
     
     packet_num = 0;
