@@ -1022,12 +1022,12 @@ int CmdCurrentTelemetry(char* paramstr)
             // telemetry is already in the posatt data structure, as long as 
             // a TLE has been uploaded.
             sprintf(downlink_data,"PosAtt Telem: %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf",
-                    posatt.jd, posatt.t_since, posatt.x_eci, posatt.y_eci, posatt.z_eci,
+                    posatt.jd, posatt.t_since, posatt.px_eci, posatt.py_eci, posatt.pz_eci,
                     posatt.lon, posatt.lat, posatt.cor_lat, posatt.elev, posatt.lst,
-                    posatt.B_x, posatt.B_y, posatt.B_z,
-                    posatt.B_fx, posatt.B_fy, posatt.B_fz, posatt.b_x, posatt.b_y, posatt.b_z,
-                    posatt.bf_x, posatt.bf_y, posatt.bf_z, posatt.s_x, posatt.s_y, posatt.s_z,
-                    posatt.sf_x, posatt.sf_y, posatt.sf_z,
+                    posatt.bx_eci, posatt.by_eci, posatt.bz_eci,
+                    posatt.bx_body, posatt.by_body, posatt.bz_body, posatt.ubx_eci, posatt.uby_eci, posatt.ubz_eci,
+                    posatt.ubx_body, posatt.uby_body, posatt.ubz_body, posatt.usx_eci, posatt.usy_eci, posatt.usz_eci,
+                    posatt.usx_body, posatt.usy_body, posatt.usz_body,
                     posatt.q0, posatt.q1, posatt.q2, posatt.q3);
             he100_transmit_packet(he100_response, downlink_data);
             break;

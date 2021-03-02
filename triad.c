@@ -30,7 +30,7 @@
 
 
 // Define triad function
-void triad(double *marr, double *sarr, double *iarr, double *jarr, double *q0, double *q1, double *q2, double *q3, double *att)
+void triad(double *marr, double *sarr, double *iarr, double *jarr, double *pq, double *att)
 {
 
 /**********************************************************************************************
@@ -112,10 +112,10 @@ void triad(double *marr, double *sarr, double *iarr, double *jarr, double *q0, d
     *******************************************************************************/
     
     double lq0 = sqrt((attmat[0][0]+attmat[1][1]+attmat[2][2]+1)/4);
-    *q1 = (attmat[2][1]-attmat[1][2])/(4*lq0);
-    *q2 = (attmat[0][2]-attmat[2][0])/(4*lq0);
-    *q3 = (attmat[1][0]-attmat[0][1])/(4*lq0);
-    *q0 = lq0;
+    pq[0] = lq0;
+    pq[1] = (attmat[2][1]-attmat[1][2])/(4*lq0);
+    pq[2] = (attmat[0][2]-attmat[2][0])/(4*lq0);
+    pq[3] = (attmat[1][0]-attmat[0][1])/(4*lq0);
     
     // export the attitude matrix as the function return value in att[9] = 
     // [[row1],[row2],[row3]]
@@ -144,7 +144,137 @@ void desired_q(double *att, double *nadir_eci, double *q)
     double nadir_body[3];
     rbody(att, nadir_eci, nadir_body);
     
-    q[0]=nadir_body[0];
-    q[1]=nadir_body[1];
-    q[2]=nadir_body[2];
+    // define a vector in body coordinates that points to the +Z direction
+    const double zvec[3] = {0.0,0.0,1.0};
+    // calculate angle between zvec and nadir_body using dot product
+    double zdotbody = zvec[0]*nadir_body[0] + zvec[1]*nadir_body[1] + zvec[2]*nadir_body[2];
+    double zvec_angle = acos(zdotbody);
+    // calculate scalar component of desired quaternion
+    q[0] = cos(zvec_angle/2.0);
+    
+    // calculate the desired rotation axis as cross product with zvec and nadir_body
+    double zvec_rotaxis[3];
+    zvec_rotaxis[0] = (zvec[1]*nadir_body[2]-zvec[2]*nadir_body[1]);
+    zvec_rotaxis[1] = (zvec[2]*nadir_body[0]-zvec[0]*nadir_body[2]);
+    zvec_rotaxis[2] = (zvec[0]*nadir_body[1]-zvec[1]*nadir_body[0]);
+    
+    // calculate the vector part of quaternion
+    q[1] = zvec_rotaxis[0]*sin(zvec_angle/2.0);
+    q[2] = zvec_rotaxis[1]*sin(zvec_angle/2.0);
+    q[3] = zvec_rotaxis[2]*sin(zvec_angle/2.0);
+    
+    //q[0] = zvec_angle;
+    //q[1] = nadir_body[0];
+    //q[2] = nadir_body[1];
+    //q[3] = nadir_body[2];
+    //q[1] = zvec_rotaxis[0];
+    //q[2] = zvec_rotaxis[1];
+    //q[3] = zvec_rotaxis[2];
+}
+
+void rotate(double *dtime, double *pq1, double *pq2, double *dq, double *b_body, double *omega, double *dipole)
+{
+    // b_body is in nT, converted here to T
+    // omega is radians/sec double[3]
+    // dipole return is in Am^2 double[3]
+    
+    double ts[3] = {180, 180, 180};                    // settling time in seconds
+    double zeta[3] = {0.65, 0.65, 0.65};            // damping coefficient
+
+    // normalize the two input position quaternions
+    double pq1_mag = sqrt(pq1[0]*pq1[0] + pq1[1]*pq1[1] + pq1[2]*pq1[2] + pq1[3]*pq1[3]);
+    if (pq1_mag)
+    {
+        pq1[0] /= pq1_mag;
+        pq1[1] /= pq1_mag;
+        pq1[2] /= pq1_mag;
+        pq1[3] /= pq1_mag;
+    }
+    double pq2_mag = sqrt(pq2[0]*pq2[0] + pq2[1]*pq2[1] + pq2[2]*pq2[2] + pq2[3]*pq2[3]);
+    if (pq2_mag)
+    {
+        pq2[0] /= pq2_mag;
+        pq2[1] /= pq2_mag;
+        pq2[2] /= pq2_mag;
+        pq2[3] /= pq2_mag;
+    }
+    double dq_mag = sqrt(dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] + dq[3]*dq[3]);
+    if (dq_mag)
+    {
+        dq[0] /= dq_mag;
+        dq[1] /= dq_mag;
+        dq[2] /= dq_mag;
+        dq[3] /= dq_mag;
+    }
+    
+    // Declare RamSat dimensions
+    double satmass = 2.556;   // units: kg
+    double satheight = 0.20;  // units: m
+    double satwidth = 0.10;
+    double satdepth = 0.10;
+
+    // Calculate the inertia matrix for the satellite body (This is the J term in torque calc)
+    double ibody[3][3] = { {(satmass*((satheight*satheight)+(satdepth*satdepth)))/12, 0, 0},
+                           { 0, (satmass*((satwidth*satwidth)+(satheight*satheight)))/12, 0},
+                           { 0, 0, (satmass*((satdepth*satdepth)+(satwidth*satwidth)))/12} };
+
+    // natural frequency                                               
+    double omegan[3] = {4.4/(ts[0]*zeta[0]), 4.4/(ts[1]*zeta[1]), 4.4/(ts[2]*zeta[2])};
+
+    // proportional gains (2*J*zeta*omegan)   
+    double kp[3] = {2*ibody[0][0]*zeta[0]*omegan[0], 
+                 2*ibody[1][1]*zeta[1]*omegan[1], 
+                 2*ibody[2][2]*zeta[2]*omegan[2]}; 
+
+    // derivative gains (2*J*omegan^2)
+    double kd[3] = {2*ibody[0][0]*omegan[0]*omegan[0], 
+                 2*ibody[1][1]*omegan[1]*omegan[1], 
+                 2*ibody[2][2]*omegan[2]*omegan[2]};
+
+    // attitude error (position quaternion vs desired position quaternion)
+    // quaternion error https://digitalcommons.usu.edu/cgi/viewcontent.cgi?article=3221&context=smallsat
+    double ae[4] = { dq[0]*pq1[0]+dq[1]*pq1[1]+dq[2]*pq1[2]+dq[3]*pq1[3],
+                  -dq[1]*pq1[0]+dq[0]*pq1[1]+dq[3]*pq1[2]-dq[2]*pq1[3],
+                  -dq[2]*pq1[0]-dq[3]*pq1[1]+dq[0]*pq1[2]+dq[1]*pq1[3],
+                  -dq[3]*pq1[0]+dq[2]*pq1[1]-dq[1]*pq1[2]+dq[0]*pq1[3] };
+   
+    // Define the 4D matrix from the second quaternion that is used to calculate angular velocity
+    double q12[4] = { pq2[0]*pq1[0]+pq2[1]*pq1[1]+pq2[2]*pq1[2]+pq2[3]*pq1[3],
+                  -pq2[1]*pq1[0]+pq2[0]*pq1[1]+pq2[3]*pq1[2]-pq2[2]*pq1[3],
+                  -pq2[2]*pq1[0]-pq2[3]*pq1[1]+pq2[0]*pq1[2]+pq2[1]*pq1[3],
+                  -pq2[3]*pq1[0]+pq2[2]*pq1[1]-pq2[1]*pq1[2]+pq2[0]*pq1[3] };
+    // Calculate the angle from the first measured quaternion to the second measured quaternion
+    double theta = 2*acos(q12[0]);
+    double fomega = theta/(*dtime);
+    // Calculate the rotation vector around which the rotation occurred
+    double nhat[3] = {0,0,0};
+    if (theta)
+    {
+        nhat[0] = q12[0]/sin(theta/2);
+        nhat[1] = q12[1]/sin(theta/2);
+        nhat[2] = q12[2]/sin(theta/2);
+    }
+    omega[0] = fomega*nhat[0];
+    omega[1] = fomega*nhat[1];
+    omega[2] = fomega*nhat[2];  
+    
+    // control torque (Nm) calculation 
+    // Multiplied the vector part of the quaternion with kp as in:
+    // https://digitalcommons.usu.edu/cgi/viewcontent.cgi?article=3221&context=smallsat
+    double propterm[3] = {-(kp[0]*ae[1]), (-kp[1]*ae[2]), (-kp[2]*ae[3])}; 
+    double derivterm[3] = {kd[0]*omega[0], kd[1]*omega[1], kd[2]*omega[2]};
+    double torque[3] = {propterm[0]-derivterm[0], propterm[1]-derivterm[1], propterm[2]-derivterm[2]};
+    // convert magnetic field in body frame from nT to T
+    double bT[3];
+    bT[0] = b_body[0] * 1e-9;
+    bT[1] = b_body[1] * 1e-9;
+    bT[2] = b_body[2] * 1e-9;
+    double bT_mag = sqrt(bT[0]*bT[0] + bT[1]*bT[1] + bT[2]*bT[2]);
+    double bT_mag2 = bT_mag * bT_mag;
+    
+    // Calculate the magnetic dipole (Am^2) required to rotate the RamSat body to the desired attitude
+    // bT X torque 
+    dipole[0] = (bT[1]*torque[2]-bT[2]*torque[1]) / bT_mag2;
+    dipole[1] = (bT[2]*torque[0]-bT[0]*torque[2]) / bT_mag2;
+    dipole[2] = (bT[0]*torque[1]-bT[1]*torque[0]) / bT_mag2;
 }

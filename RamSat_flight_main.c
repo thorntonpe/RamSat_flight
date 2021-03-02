@@ -211,17 +211,22 @@ void __attribute((interrupt,shadow,no_auto_psv)) _U2RXInterrupt (void)
 
 int main(void) {
     // He-100 communication variables
-    unsigned char he100_response[8];
-    char downlink_msg[260]; // Message to be downlinked by RamSat
+    unsigned char he100_response[80];
+    char downlink_msg[512]; // Message to be downlinked by RamSat
 
     // flags controlling the main program loop
     int isNewTLE = 0;   // flag is set immediately after a new TLE is uplinked
+    int isGoodTLE = 0;  // flag is set when sgp4 initialization is complete after a new TLE
+    int isFirst    ;    // flag for the first time through position calculations with new TLE
+    double pq1[4], pq2[4]; // two most recent position quaternions from triad()
+    double jd1, jd2;       // times (julian date) for two most recent passes through triad()
+    int n_rotate = 0;
     int m[8] = {1,1,1,1,1,1,1,1};   // sun sensor mask (1=use, 0=reject)
     
     // track maximum value for sun-sensor vectors
     // initialize with a small value so it can be used for division
     double sxybodymag_max = 1.0;
-    float bcr3_thresh = 4.0; // threshold voltage for -Z panel indicating sunlight
+    float bcr3_thresh = 3.0; // threshold voltage for -Z panel indicating sunlight
     
     // precalculated ellipsoid flattening parameter
     double f = 0.003352811;    // flattening parameter for ellipsoid
@@ -702,13 +707,13 @@ int main(void) {
         
         // If the TLE was just uplinked, initialize the SGP4 parameters
         double sat_params[N_SAT_PARAMS]; // parameters needed by the SGP4 code
-        int isGoodTLE;                   // flag for position-attitude calculations
         if (isNewTLE)
         {
             SGP4_init(sat_params, &tle);
             // clear the new TLE flag, set the good TLE flag
             isNewTLE = 0;
             isGoodTLE = 1;
+            isFirst = 1;   // indicate the first pass with new TLE
         }
         
         // If there is a good TLE, use it and RTC data to make an orbital prediction
@@ -741,6 +746,13 @@ int main(void) {
                     pearth[1]=pos[1]/pearthmag;
                     pearth[2]=pos[2]/pearthmag;
                 }
+                else
+                {
+                    // this should never happen! Give a unit vector pointing to N pole as flag
+                    pearth[0] = 0.0;
+                    pearth[1] = 0.0;
+                    pearth[2] = 1.0;
+                }
                 
                 // calculate sun position in ECI coordinates
                 double sunx_eci, suny_eci, sunz_eci;
@@ -757,13 +769,14 @@ int main(void) {
                 }
                 else
                 {
+                    // this should never happen! Give a unit vector pointing to N pole as a flag
                     searth[0] = 0.0;
                     searth[1] = 0.0;
-                    searth[2] = 0.0;
+                    searth[2] = 1.0;
                 }
                 
                 // Once the searth and pearth unit vectors are known,
-                // it is possible to calculate the Ramsat-Earth-Sun angle (res)
+                // it is possible to calculate the Ramsat-Earth-Sun angle (res, radians)
                 // as the dot product between the two vectors.
                 // if cos_res is positive, res is acute and RamSat is sunlit.
                 // if cos_res is negative, res is obtuse and RamSat is in Earth's shadow
@@ -782,6 +795,12 @@ int main(void) {
                 
                 // latitude corrected for ellipsoid (also in radians))
                 double cor_lat = atan(tan(lat)/f2);
+                
+                // test force lon, lat, elev
+                //lon = -1.47085;
+                //lat = 0.62852;
+                //cor_lat = lat;
+                //elev = 0.259;
                 
                 // calculate the decimal year, needed for WMM routine
                 // based on known julian date for 1 Jan 2021 (00:00:00 UTC)
@@ -821,17 +840,18 @@ int main(void) {
                 }
                 else
                 {
+                    // this should never happen! Give a unit vector pointing to N pole as a flag
                     mearth[0] = 0.0;
                     mearth[1] = 0.0;
-                    mearth[2] = 0.0;
+                    mearth[2] = 1.0;
                 }
                 
                 // gather MTM data in satellite frame coordinates
                 // start the MTM measurement
                 imtq_start_mtm(&imtq_common);
-                // delay for MTM integration
+                // delay for MTM integration, longer than 80 msec
                 TMR1 = 0;
-                while (TMR1 <= 82 * TMR1MSEC);
+                while (TMR1 <= 100 * TMR1MSEC);
                 // get the calibrated MTM data
                 imtq_resp_mtm imtq_calib_mtm;       // iMTQ calibrated magnetometer data
                 imtq_get_calib_mtm(&imtq_common, &imtq_calib_mtm);
@@ -849,26 +869,30 @@ int main(void) {
                 }
                 else
                 {
+                    // this should never happen! Give a unit vector pointing to N pole as a flag
                     mbody[0] = 0.0;
                     mbody[1] = 0.0;
-                    mbody[2] = 0.0;
+                    mbody[2] = 1.0;
                 }
                 
+                
                 // only try to use sun sensors if in sunlight
+                double spx, snx, spy, sny;
                 double sx_body, sy_body, sz_body;
+                double sxybodymag;
                 if (cos_res > 0.0)
                 {
                     // read the sun sensors (2 each for +x, -x, +y, -y)
                     adc_scan_all();
                     // m is is user_defined mask (0 or 1) allowing rejection of individual sensors
                     // +X face = ADC4, ADC0
-                    double spx = ((double)ADC1BUF4*m[0] + (double)ADC1BUF0*m[1])/(double)(m[0]+m[1]);
+                    spx = ((double)ADC1BUF4*m[0] + (double)ADC1BUF0*m[1])/(double)(m[0]+m[1]);
                     // -X face = ADC6, ADC2 
-                    double snx = ((double)ADC1BUF6*m[2] + (double)ADC1BUF2*m[3])/(double)(m[2]+m[3]);
+                    snx = ((double)ADC1BUF6*m[2] + (double)ADC1BUF2*m[3])/(double)(m[2]+m[3]);
                     // +Y face = ADC3, ADC7
-                    double spy = ((double)ADC1BUF3*m[4] + (double)ADC1BUF7*m[5])/(double)(m[4]+m[5]);
+                    spy = ((double)ADC1BUF3*m[4] + (double)ADC1BUF7*m[5])/(double)(m[4]+m[5]);
                     // -Y face = ADC5, ADC1
-                    double sny = ((double)ADC1BUF5*m[6] + (double)ADC1BUF1*m[7])/(double)(m[6]+m[7]);
+                    sny = ((double)ADC1BUF5*m[6] + (double)ADC1BUF1*m[7])/(double)(m[6]+m[7]);
 
                     // the difference between positive and negative faces should give
                     // a directional signal for that axis
@@ -917,61 +941,141 @@ int main(void) {
                     sbody[2] = 0.0;
                 }
                 
-                double q0,q1,q2,q3;
+                // calculate the position quaternion (pq) and the attitude matrix (att) from TRIAD
+                double pq[4];
                 double att[9];
-                triad(mbody,sbody,mearth,searth,&q0,&q1,&q2,&q3, att);
-                // define nadir-pointing unit vector in ECI coordinates
-                double nadir_eci[3];
-                nadir_eci[0] = -pearth[0];
-                nadir_eci[1] = -pearth[1];
-                nadir_eci[2] = -pearth[2];
-                double nadir_body[3];
-                desired_q(att, mearth, nadir_body);
+                triad(mbody,sbody,mearth,searth, pq, att);
                 
-                sprintf(downlink_msg,"RamSat: attitude test: %.3lf %.3lf %.3lf  : %.3lf %.3lf %.3lf ",
-                        mbody[0], mbody[1], mbody[2], nadir_body[0], nadir_body[1], nadir_body[2]);
-                he100_transmit_packet(he100_response, downlink_msg);
-                
-                isGoodTLE = 0;
+                // check if this is the first pass with new TLE
+                if (isFirst)
+                {
+                    pq1[0] = pq[0];
+                    pq1[1] = pq[1];
+                    pq1[2] = pq[2];
+                    pq1[3] = pq[3];
+                    jd1 = jd;
+                    isFirst = 0;                    
+                }
+                else
+                {
+                    // get the second position quaternion for omega calculation
+                    pq2[0] = pq[0];
+                    pq2[1] = pq[1];
+                    pq2[2] = pq[2];
+                    pq2[3] = pq[3];
+                    // second time for dtime calculation
+                    jd2= jd;
+                    
+                    // define nadir-pointing unit vector in ECI coordinates
+                    double nadir_eci[3];
+                    nadir_eci[0] = -pearth[0];
+                    nadir_eci[1] = -pearth[1];
+                    nadir_eci[2] = -pearth[2];
+                    
+                    // calculate the desired quaternion from nadir_eci and +Z
+                    double dq[4];  // the returned quaternion from desired_q()
+                    desired_q(att, nadir_eci, dq);
+
+                    // rotation to achieve nadir pointing
+                    double omega[3];  // angular velocity
+                    double dipole[3]; // requested dipole
+                    double b_body[3]; // non-normalized magnetic field in body coords, nT
+                    b_body[0] = mtm_x;
+                    b_body[1] = mtm_y;
+                    b_body[2] = mtm_z;
+                    
+                    // calculate dtime in seconds from julian days for each position quaternion
+                    double dtime = (jd2-jd1) * 86400.0;
+                    
+                    // calculate dipole to rotate RamSat!!!
+                    rotate(&dtime, pq1, pq2, dq, b_body, omega, dipole);
+                    
+                    // test code break
+                    //sprintf(downlink_msg,"RamSat: posatt test %lf : %.4lf %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf",
+                    //        (jd2-jd1), pq1[0], pq1[1], pq1[2], pq1[3], pq2[0], pq2[1], pq2[2], pq2[3], dq[0], dq[1], dq[2], dq[3], b_body[0], b_body[1], b_body[2], omega[0], omega[1], omega[2], dipole[0], dipole[1], dipole[2]);
+                    // disable UART2 interrupt
+                    //_U2RXIE = 0;
+                    // broadcast beacon message            
+                    //he100_transmit_packet(he100_response, downlink_msg);
+                    // reset the UART2 receive traps
+                    //nhbytes = 0;
+                    //ndbytes = 0;
+                    //ishead_flag = 0;
+                    //isdata_flag = 0;
+                    //he100_receive = 0;
+                    // clear any overflow error, which also clears the receive buffer
+                    //U2STAbits.OERR = 0;
+                    // restart the interrupt handler
+                    //_U2RXIE = 1;
+                    
+                    // swap the current with previous pq and jd
+                    pq1[0] = pq2[0];
+                    pq1[1] = pq2[1];
+                    pq1[2] = pq2[2];
+                    pq1[3] = pq2[3];
+                    jd1 = jd2;
+                    
+                    // test code to make sure we don't overload  the transmitter
+                    //TMR1 = 0;
+                    //while (TMR1 < 1000*TMR1MSEC);
+                    
+                    //n_rotate++;
+                    if (n_rotate > 10)
+                    {
+                        isGoodTLE = 0;
+                    }
+                }
                 
                 // once all orbital and attitude calculations are complete
                 // all angles are converted from radians to degrees
                 posatt.jd = jd;
                 posatt.t_since = t_since;
-                posatt.x_eci = pos[0];
-                posatt.y_eci = pos[1];
-                posatt.z_eci = pos[2];
-                posatt.lon = lon * (180.0/pi);
-                posatt.lat = lat * (180.0/pi);
-                posatt.cor_lat = cor_lat * (180.0/pi);
+                posatt.px_eci = pos[0];
+                posatt.py_eci = pos[1];
+                posatt.pz_eci = pos[2];
+                posatt.upx_eci = pearth[0];
+                posatt.upy_eci = pearth[1];
+                posatt.upz_eci = pearth[2];
+                posatt.lon = lon * (180.0/PI);
+                posatt.lat = lat * (180.0/PI);
+                posatt.cor_lat = cor_lat * (180.0/PI);
                 posatt.elev = elev;
-                posatt.lst = lst * (180.0/pi);
+                posatt.lst = lst * (180.0/PI);
+                posatt.decimal_year = decimal_year;
                 posatt.B_locx = b_locx;
                 posatt.B_locy = b_locy;
                 posatt.B_locz = b_locz;
-                posatt.B_x = Bx;
-                posatt.B_y = By;
-                posatt.B_z = Bz;
-                posatt.B_fx = imtq_calib_mtm.x;
-                posatt.B_fy = imtq_calib_mtm.y;
-                posatt.B_fz = imtq_calib_mtm.z;
-                posatt.b_x = mearth[0];
-                posatt.b_y = mearth[1];
-                posatt.b_z = mearth[2];
-                posatt.bf_x = mbody[0];
-                posatt.bf_y = mbody[1];
-                posatt.bf_z = mbody[2];
-                posatt.s_x = searth[0];
-                posatt.s_y = searth[1];
-                posatt.s_z = searth[2];
-                posatt.sf_x = sbody[0];
-                posatt.sf_y = sbody[1];
-                posatt.sf_z = sbody[2];
+                posatt.bx_eci = Bx;
+                posatt.by_eci = By;
+                posatt.bz_eci = Bz;
+                posatt.ubx_eci = mearth[0];
+                posatt.uby_eci = mearth[1];
+                posatt.ubz_eci = mearth[2];
+                posatt.bx_body = mtm_x;
+                posatt.by_body = mtm_y;
+                posatt.bz_body = mtm_z;
+                posatt.ubx_body = mbody[0];
+                posatt.uby_body = mbody[1];
+                posatt.ubz_body = mbody[2];
+                posatt.sx_eci = sunx_eci;
+                posatt.sy_eci = suny_eci;
+                posatt.sz_eci = sunz_eci;
+                posatt.usx_eci = searth[0];
+                posatt.usy_eci = searth[1];
+                posatt.usz_eci = searth[2];
+                posatt.sxybodymag_max = sxybodymag_max;
+                posatt.sx_body = sx_body;
+                posatt.sy_body = sy_body;
+                posatt.sz_body = sz_body;
+                posatt.usx_body = sbody[0];
+                posatt.usy_body = sbody[1];
+                posatt.usz_body = sbody[2];
                 posatt.cos_res = cos_res;
-                posatt.q0 = q0;
-                posatt.q1=q1;
-                posatt.q2=q2;
-                posatt.q3=q3;
+                posatt.res = res * (180.0/PI);
+                posatt.q0 = pq[0];
+                posatt.q1 = pq[1];
+                posatt.q2 = pq[2];
+                posatt.q3 = pq[3];
             }   // end of no error on sgp4
             else
             {

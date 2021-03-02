@@ -127,7 +127,7 @@ int he100_telemetry(unsigned char* telem_raw)
 void he100_transmit_packet(unsigned char* response, char* data)
 {
     int i;
-    unsigned char buf[280];
+    unsigned char buf[512];
     int data_len;
     int packet_len;
     
@@ -173,10 +173,11 @@ void he100_transmit_packet(unsigned char* response, char* data)
     }
     
     // read 8-byte response from radio board on UART2
-    for (i=0 ; i<7 ; i++)
+    for (i=0 ; i<8 ; i++)
     {
-        *response++ = read_char2();
+        //*response++ = read_char2();
+        response[i] = read_char2();
     }
-    *response = read_char2();
+    //*response = read_char2();
 }
 
