@@ -461,6 +461,7 @@ void telem_gather_lev2(telem_control_type* c)
     int sector, sector_page;
     char meta_data[256];
     char page_data[256];
+    char record_data[256];
 
     // read the metadata from SFM
     telem_lev2_read_metadata(c);
@@ -518,7 +519,19 @@ void telem_gather_lev2(telem_control_type* c)
     }
     
     // gather telemetry, format, and concatenate to page string
-    strcat(c->pagedata,",Lev2_test");
+    sprintf(record_data," %20.7lf,%5.0lf,%5.0lf,%5.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%7.3lf,%7.3lf,%7.3lf,%5.3lf",
+            posatt.jd, posatt.px_eci/10.0, posatt.py_eci/10.0, posatt.pz_eci/10.0, posatt.lst,
+            posatt.ubx_eci*100.0, posatt.uby_eci*100.0, posatt.ubz_eci*100.0,
+            posatt.ubx_body*100.0, posatt.uby_body*100.0, posatt.ubz_body*100.0,
+            posatt.usx_eci*100.0, posatt.usy_eci*100.0, posatt.usz_eci*100.0,
+            posatt.usx_body*100.0, posatt.usy_body*100.0, posatt.usz_body*100.0, posatt.res,
+            posatt.pq1[0]*100.0, posatt.pq1[1]*100.0, posatt.pq1[2]*100, posatt.pq1[3]*100.0,
+            posatt.pq2[0]*100.0, posatt.pq2[1]*100.0, posatt.pq2[2]*100, posatt.pq2[3]*100.0,
+            posatt.dq[0]*100.0, posatt.dq[1]*100.0, posatt.dq[2]*100, posatt.dq[3]*100.0,
+            posatt.omega[0]*100.0, posatt.omega[1]*100.0, posatt.omega[2]*100.0,
+            posatt.torque[0]*10000.0, posatt.torque[1]*10000.0, posatt.torque[2]*10000.0,
+            posatt.dipole[0], posatt.dipole[1], posatt.dipole[2], posatt.dtime);
+    strcat(c->pagedata,record_data);
     // increment the telemetry counter
     c->record_count = c->record_count + 1;
     

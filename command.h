@@ -25,6 +25,8 @@ int CmdCaptureImage(char* paramstr);
 int CmdCameraPower(char* paramstr);
 int CmdFileDelete(char *paramstr);
 int CmdStartDetumble(char *paramstr);
+int CmdSunSensorMask(char *paramstr, int *ss_m);
+int CmdSunSensorScalar(char *paramstr, float *ss_s);
 int CmdConfigTelem0(char *paramstr);
 int CmdConfigTelem1(char *paramstr);
 int CmdConfigTelem2(char *paramstr);

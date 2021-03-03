@@ -213,15 +213,20 @@ int main(void) {
     // He-100 communication variables
     unsigned char he100_response[80];
     char downlink_msg[512]; // Message to be downlinked by RamSat
+    int n_overflow_err = 0;  // track the number of UART receive buffer overflows in main loop
 
     // flags controlling the main program loop
     int isNewTLE = 0;   // flag is set immediately after a new TLE is uplinked
     int isGoodTLE = 0;  // flag is set when sgp4 initialization is complete after a new TLE
     int isFirst    ;    // flag for the first time through position calculations with new TLE
-    double pq1[4], pq2[4]; // two most recent position quaternions from triad()
-    double jd1, jd2;       // times (julian date) for two most recent passes through triad()
+    double pq1[4], pq2[4];  // two most recent position quaternions from triad()
+    double jd1, jd2;        // times (julian date) for two most recent passes through triad()
+    double dtime = 0.0;     // time difference between position quaternion calculations
+    double min_dtime = 1.0; // minimum time between position quaternions for attitude control (sec)
     int n_rotate = 0;
-    int m[8] = {1,1,1,1,1,1,1,1};   // sun sensor mask (1=use, 0=reject)
+    int ss_m[8] = {1,1,1,1,1,1,1,1};   // sun sensor mask (1=use, 0=reject)
+    float ss_s[8] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0}; // sun sensor scalar
+    
     
     // track maximum value for sun-sensor vectors
     // initialize with a small value so it can be used for division
@@ -513,12 +518,8 @@ int main(void) {
         {
             // disable the UART2 receive interrupt
             _U2RXIE = 0;
-            // report overflow
-            sprintf(downlink_msg,"RamSat: Main loop UART2 buffer overflow (clearing)");
-            he100_transmit_packet(he100_response, downlink_msg);
-            // wait one second
-            TMR1 = 0;
-            while (TMR1 < 1000L*TMR1MSEC);
+            // track overflows
+            n_overflow_err++;
             // reset the UART2 receive traps
             nhbytes = 0;
             ndbytes = 0;
@@ -642,6 +643,14 @@ int main(void) {
                             
                         case 18: // Start the detumble function of iMTQ
                             cmd_err = CmdStartDetumble(cmd_paramstr);
+                            break;
+                            
+                        case 70: // overwrite the default sun-sensor mask array
+                            cmd_err = CmdSunSensorMask(cmd_paramstr, ss_m);
+                            break;
+                        
+                        case 71: // overwrite the default sun-sensor scalar array
+                            cmd_err = CmdSunSensorScalar(cmd_paramstr, ss_s);
                             break;
                         
                         case 80: // Configure and initialize level-0 telemetry
@@ -796,12 +805,6 @@ int main(void) {
                 // latitude corrected for ellipsoid (also in radians))
                 double cor_lat = atan(tan(lat)/f2);
                 
-                // test force lon, lat, elev
-                //lon = -1.47085;
-                //lat = 0.62852;
-                //cor_lat = lat;
-                //elev = 0.259;
-                
                 // calculate the decimal year, needed for WMM routine
                 // based on known julian date for 1 Jan 2021 (00:00:00 UTC)
                 // using 365.0 days per year since no leap years during RamSat mission
@@ -875,7 +878,6 @@ int main(void) {
                     mbody[2] = 1.0;
                 }
                 
-                
                 // only try to use sun sensors if in sunlight
                 double spx, snx, spy, sny;
                 double sx_body, sy_body, sz_body;
@@ -886,13 +888,13 @@ int main(void) {
                     adc_scan_all();
                     // m is is user_defined mask (0 or 1) allowing rejection of individual sensors
                     // +X face = ADC4, ADC0
-                    spx = ((double)ADC1BUF4*m[0] + (double)ADC1BUF0*m[1])/(double)(m[0]+m[1]);
+                    spx = ((double)ADC1BUF4*ss_s[0]*ss_m[0] + (double)ADC1BUF0*ss_s[1]*ss_m[1])/(double)(ss_m[0]+ss_m[1]);
                     // -X face = ADC6, ADC2 
-                    snx = ((double)ADC1BUF6*m[2] + (double)ADC1BUF2*m[3])/(double)(m[2]+m[3]);
+                    snx = ((double)ADC1BUF6*ss_s[2]*ss_m[2] + (double)ADC1BUF2*ss_s[3]*ss_m[3])/(double)(ss_m[2]+ss_m[3]);
                     // +Y face = ADC3, ADC7
-                    spy = ((double)ADC1BUF3*m[4] + (double)ADC1BUF7*m[5])/(double)(m[4]+m[5]);
+                    spy = ((double)ADC1BUF3*ss_s[4]*ss_m[4] + (double)ADC1BUF7*ss_s[5]*ss_m[5])/(double)(ss_m[4]+ss_m[5]);
                     // -Y face = ADC5, ADC1
-                    sny = ((double)ADC1BUF5*m[6] + (double)ADC1BUF1*m[7])/(double)(m[6]+m[7]);
+                    sny = ((double)ADC1BUF5*ss_s[6]*ss_m[6] + (double)ADC1BUF1*ss_s[7]*ss_m[7])/(double)(ss_m[6]+ss_m[7]);
 
                     // the difference between positive and negative faces should give
                     // a directional signal for that axis
@@ -958,124 +960,146 @@ int main(void) {
                 }
                 else
                 {
-                    // get the second position quaternion for omega calculation
-                    pq2[0] = pq[0];
-                    pq2[1] = pq[1];
-                    pq2[2] = pq[2];
-                    pq2[3] = pq[3];
-                    // second time for dtime calculation
-                    jd2= jd;
-                    
-                    // define nadir-pointing unit vector in ECI coordinates
-                    double nadir_eci[3];
-                    nadir_eci[0] = -pearth[0];
-                    nadir_eci[1] = -pearth[1];
-                    nadir_eci[2] = -pearth[2];
-                    
-                    // calculate the desired quaternion from nadir_eci and +Z
-                    double dq[4];  // the returned quaternion from desired_q()
-                    desired_q(att, nadir_eci, dq);
-
-                    // rotation to achieve nadir pointing
-                    double omega[3];  // angular velocity
-                    double dipole[3]; // requested dipole
-                    double b_body[3]; // non-normalized magnetic field in body coords, nT
-                    b_body[0] = mtm_x;
-                    b_body[1] = mtm_y;
-                    b_body[2] = mtm_z;
-                    
                     // calculate dtime in seconds from julian days for each position quaternion
-                    double dtime = (jd2-jd1) * 86400.0;
+                    dtime = (jd-jd1) * 86400.0;
                     
-                    // calculate dipole to rotate RamSat!!!
-                    rotate(&dtime, pq1, pq2, dq, b_body, omega, dipole);
-                    
-                    // test code break
-                    //sprintf(downlink_msg,"RamSat: posatt test %lf : %.4lf %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf",
-                    //        (jd2-jd1), pq1[0], pq1[1], pq1[2], pq1[3], pq2[0], pq2[1], pq2[2], pq2[3], dq[0], dq[1], dq[2], dq[3], b_body[0], b_body[1], b_body[2], omega[0], omega[1], omega[2], dipole[0], dipole[1], dipole[2]);
-                    // disable UART2 interrupt
-                    //_U2RXIE = 0;
-                    // broadcast beacon message            
-                    //he100_transmit_packet(he100_response, downlink_msg);
-                    // reset the UART2 receive traps
-                    //nhbytes = 0;
-                    //ndbytes = 0;
-                    //ishead_flag = 0;
-                    //isdata_flag = 0;
-                    //he100_receive = 0;
-                    // clear any overflow error, which also clears the receive buffer
-                    //U2STAbits.OERR = 0;
-                    // restart the interrupt handler
-                    //_U2RXIE = 1;
-                    
-                    // swap the current with previous pq and jd
-                    pq1[0] = pq2[0];
-                    pq1[1] = pq2[1];
-                    pq1[2] = pq2[2];
-                    pq1[3] = pq2[3];
-                    jd1 = jd2;
-                    
-                    // test code to make sure we don't overload  the transmitter
-                    //TMR1 = 0;
-                    //while (TMR1 < 1000*TMR1MSEC);
-                    
-                    //n_rotate++;
-                    if (n_rotate > 10)
+                    // only proceed with position calculations if dtime exceeds threshold
+                    if (dtime > min_dtime)
                     {
-                        isGoodTLE = 0;
-                    }
-                }
-                
-                // once all orbital and attitude calculations are complete
-                // all angles are converted from radians to degrees
-                posatt.jd = jd;
-                posatt.t_since = t_since;
-                posatt.px_eci = pos[0];
-                posatt.py_eci = pos[1];
-                posatt.pz_eci = pos[2];
-                posatt.upx_eci = pearth[0];
-                posatt.upy_eci = pearth[1];
-                posatt.upz_eci = pearth[2];
-                posatt.lon = lon * (180.0/PI);
-                posatt.lat = lat * (180.0/PI);
-                posatt.cor_lat = cor_lat * (180.0/PI);
-                posatt.elev = elev;
-                posatt.lst = lst * (180.0/PI);
-                posatt.decimal_year = decimal_year;
-                posatt.B_locx = b_locx;
-                posatt.B_locy = b_locy;
-                posatt.B_locz = b_locz;
-                posatt.bx_eci = Bx;
-                posatt.by_eci = By;
-                posatt.bz_eci = Bz;
-                posatt.ubx_eci = mearth[0];
-                posatt.uby_eci = mearth[1];
-                posatt.ubz_eci = mearth[2];
-                posatt.bx_body = mtm_x;
-                posatt.by_body = mtm_y;
-                posatt.bz_body = mtm_z;
-                posatt.ubx_body = mbody[0];
-                posatt.uby_body = mbody[1];
-                posatt.ubz_body = mbody[2];
-                posatt.sx_eci = sunx_eci;
-                posatt.sy_eci = suny_eci;
-                posatt.sz_eci = sunz_eci;
-                posatt.usx_eci = searth[0];
-                posatt.usy_eci = searth[1];
-                posatt.usz_eci = searth[2];
-                posatt.sxybodymag_max = sxybodymag_max;
-                posatt.sx_body = sx_body;
-                posatt.sy_body = sy_body;
-                posatt.sz_body = sz_body;
-                posatt.usx_body = sbody[0];
-                posatt.usy_body = sbody[1];
-                posatt.usz_body = sbody[2];
-                posatt.cos_res = cos_res;
-                posatt.res = res * (180.0/PI);
-                posatt.q0 = pq[0];
-                posatt.q1 = pq[1];
-                posatt.q2 = pq[2];
-                posatt.q3 = pq[3];
+                        // get the second position quaternion for omega calculation
+                        pq2[0] = pq[0];
+                        pq2[1] = pq[1];
+                        pq2[2] = pq[2];
+                        pq2[3] = pq[3];
+
+                        // save current jd
+                        jd2 = jd;
+
+                        // define nadir-pointing unit vector in ECI coordinates
+                        double nadir_eci[3];
+                        nadir_eci[0] = -pearth[0];
+                        nadir_eci[1] = -pearth[1];
+                        nadir_eci[2] = -pearth[2];
+
+                        // calculate the desired quaternion from nadir_eci and +Z
+                        double dq[4];  // the returned quaternion from desired_q()
+                        desired_q(att, nadir_eci, dq);
+
+                        // rotation to achieve nadir pointing
+                        double qe[4];     // quaternion error from rotate()
+                        double torque[3]; // desired torque from rotate(), (Nm)
+                        double omega[3];  // angular velocity from rotate() (rad/s)
+                        double dipole[3]; // dipole from rotate() (A m^2)
+                        double b_body[3]; // non-normalized magnetic field in body coords, nT
+                        b_body[0] = mtm_x;
+                        b_body[1] = mtm_y;
+                        b_body[2] = mtm_z;
+
+                        // calculate dipole to achieve nadir pointing through attitude control algorithm
+                        // NB: on return, the pq1, pq2, and dq quaternions are normalized
+                        rotate(&dtime, pq1, pq2, dq, qe, torque, b_body, omega, dipole);
+
+                        // Now transmit the one-minute beacon message
+                        // disable UART2 interrupt
+                        //_U2RXIE = 0;
+                        //sprintf(downlink_msg,"Omega test: %.3lf %.3lf %.3lf : %lf %lf %lf : %.3lf %.3lf %.3lf",
+                        //        omega[0], omega[1], omega[2], torque[0], torque[1], torque[2], dipole[0], dipole[1], dipole[2]);
+                        //he100_transmit_packet(he100_response, downlink_msg);
+                        // reset the UART2 receive traps
+                        //nhbytes = 0;
+                        //ndbytes = 0;
+                        //ishead_flag = 0;
+                        //isdata_flag = 0;
+                        //he100_receive = 0;
+                        // clear any overflow error, which also clears the receive buffer
+                        //U2STAbits.OERR = 0;
+                        // restart the interrupt handler
+                        //_U2RXIE = 1;
+
+                        // once all orbital and attitude calculations are complete,
+                        // populate the position and attitude data struct.
+                        // all angles are converted from radians to degrees
+                        posatt.jd = jd;
+                        posatt.t_since = t_since;
+                        posatt.px_eci = pos[0];
+                        posatt.py_eci = pos[1];
+                        posatt.pz_eci = pos[2];
+                        posatt.upx_eci = pearth[0];
+                        posatt.upy_eci = pearth[1];
+                        posatt.upz_eci = pearth[2];
+                        posatt.lon = lon * (180.0/PI);
+                        posatt.lat = lat * (180.0/PI);
+                        posatt.cor_lat = cor_lat * (180.0/PI);
+                        posatt.elev = elev;
+                        posatt.lst = lst * (180.0/PI);
+                        posatt.decimal_year = decimal_year;
+                        posatt.B_locx = b_locx;
+                        posatt.B_locy = b_locy;
+                        posatt.B_locz = b_locz;
+                        posatt.bx_eci = Bx;
+                        posatt.by_eci = By;
+                        posatt.bz_eci = Bz;
+                        posatt.ubx_eci = mearth[0];
+                        posatt.uby_eci = mearth[1];
+                        posatt.ubz_eci = mearth[2];
+                        posatt.bx_body = mtm_x;
+                        posatt.by_body = mtm_y;
+                        posatt.bz_body = mtm_z;
+                        posatt.ubx_body = mbody[0];
+                        posatt.uby_body = mbody[1];
+                        posatt.ubz_body = mbody[2];
+                        posatt.sx_eci = sunx_eci;
+                        posatt.sy_eci = suny_eci;
+                        posatt.sz_eci = sunz_eci;
+                        posatt.usx_eci = searth[0];
+                        posatt.usy_eci = searth[1];
+                        posatt.usz_eci = searth[2];
+                        posatt.sxybodymag_max = sxybodymag_max;
+                        posatt.sx_body = sx_body;
+                        posatt.sy_body = sy_body;
+                        posatt.sz_body = sz_body;
+                        posatt.usx_body = sbody[0];
+                        posatt.usy_body = sbody[1];
+                        posatt.usz_body = sbody[2];
+                        posatt.cos_res = cos_res;
+                        posatt.res = res * (180.0/PI);
+                        posatt.dtime = dtime;
+                        posatt.pq1[0] = pq1[0];
+                        posatt.pq1[1] = pq1[1];
+                        posatt.pq1[2] = pq1[2];
+                        posatt.pq1[3] = pq1[3];
+                        posatt.pq2[0] = pq2[0];
+                        posatt.pq2[1] = pq2[1];
+                        posatt.pq2[2] = pq2[2];
+                        posatt.pq2[3] = pq2[3];
+                        posatt.dq[0] = dq[0];
+                        posatt.dq[1] = dq[1];
+                        posatt.dq[2] = dq[2];
+                        posatt.dq[3] = dq[3];
+                        posatt.omega[0] = omega[0];
+                        posatt.omega[1] = omega[1];
+                        posatt.omega[2] = omega[2];
+                        posatt.torque[0] = torque[0];
+                        posatt.torque[1] = torque[1];
+                        posatt.torque[2] = torque[2];
+                        posatt.dipole[0] = dipole[0];
+                        posatt.dipole[1] = dipole[1];
+                        posatt.dipole[2] = dipole[2];
+
+                        // swap the current with previous pq and jd
+                        pq1[0] = pq2[0];
+                        pq1[1] = pq2[1];
+                        pq1[2] = pq2[2];
+                        pq1[3] = pq2[3];
+                        jd1 = jd2;
+
+                        //n_rotate++;
+                        //if (n_rotate > 10)
+                        //{
+                        //    isGoodTLE = 0;
+                        //}
+                    } // end of dtime > min_dtime
+                }  // end of not first pass
             }   // end of no error on sgp4
             else
             {

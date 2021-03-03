@@ -55,10 +55,13 @@ typedef struct
     double usz_body;    // unit sun vector Z in frame coordinates
     double cos_res;     // cosine of RamSat-Earth-Sun angle (+=sunlit)
     double res;         // RamSat-Earth-Sun angle (degrees)
-    double q0;
-    double q1;
-    double q2;
-    double q3;
+    double dtime;       // time increment between pq1 and pq2
+    double pq1[4];      // position quaternion #1
+    double pq2[4];      // position quaternion #2
+    double dq[4];       // desired quaternion
+    double omega[3];    // angular velocity (rad/s)
+    double dipole[3];   // desired dipole (A m^2)
+    double torque[3];   // torque (N m)
 } position_attitude_type;
 
 

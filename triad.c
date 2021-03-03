@@ -172,13 +172,13 @@ void desired_q(double *att, double *nadir_eci, double *q)
     //q[3] = zvec_rotaxis[2];
 }
 
-void rotate(double *dtime, double *pq1, double *pq2, double *dq, double *b_body, double *omega, double *dipole)
+void rotate(double *dtime, double *pq1, double *pq2, double *dq, double *ae, double *torque, double *b_body, double *omega, double *dipole)
 {
     // b_body is in nT, converted here to T
     // omega is radians/sec double[3]
     // dipole return is in Am^2 double[3]
     
-    double ts[3] = {180, 180, 180};                    // settling time in seconds
+    double ts[3] = {900, 900, 900};                    // settling time in seconds
     double zeta[3] = {0.65, 0.65, 0.65};            // damping coefficient
 
     // normalize the two input position quaternions
@@ -233,16 +233,17 @@ void rotate(double *dtime, double *pq1, double *pq2, double *dq, double *b_body,
 
     // attitude error (position quaternion vs desired position quaternion)
     // quaternion error https://digitalcommons.usu.edu/cgi/viewcontent.cgi?article=3221&context=smallsat
-    double ae[4] = { dq[0]*pq1[0]+dq[1]*pq1[1]+dq[2]*pq1[2]+dq[3]*pq1[3],
-                  -dq[1]*pq1[0]+dq[0]*pq1[1]+dq[3]*pq1[2]-dq[2]*pq1[3],
-                  -dq[2]*pq1[0]-dq[3]*pq1[1]+dq[0]*pq1[2]+dq[1]*pq1[3],
-                  -dq[3]*pq1[0]+dq[2]*pq1[1]-dq[1]*pq1[2]+dq[0]*pq1[3] };
+    ae[0] = dq[0]*pq1[0]+dq[1]*pq1[1]+dq[2]*pq1[2]+dq[3]*pq1[3];
+    ae[1] = -dq[1]*pq1[0]+dq[0]*pq1[1]+dq[3]*pq1[2]-dq[2]*pq1[3];
+    ae[2] = -dq[2]*pq1[0]-dq[3]*pq1[1]+dq[0]*pq1[2]+dq[1]*pq1[3];
+    ae[3] = -dq[3]*pq1[0]+dq[2]*pq1[1]-dq[1]*pq1[2]+dq[0]*pq1[3];
    
     // Define the 4D matrix from the second quaternion that is used to calculate angular velocity
     double q12[4] = { pq2[0]*pq1[0]+pq2[1]*pq1[1]+pq2[2]*pq1[2]+pq2[3]*pq1[3],
                   -pq2[1]*pq1[0]+pq2[0]*pq1[1]+pq2[3]*pq1[2]-pq2[2]*pq1[3],
                   -pq2[2]*pq1[0]-pq2[3]*pq1[1]+pq2[0]*pq1[2]+pq2[1]*pq1[3],
                   -pq2[3]*pq1[0]+pq2[2]*pq1[1]-pq2[1]*pq1[2]+pq2[0]*pq1[3] };
+    
     // Calculate the angle from the first measured quaternion to the second measured quaternion
     double theta = 2*acos(q12[0]);
     double fomega = theta/(*dtime);
@@ -250,9 +251,9 @@ void rotate(double *dtime, double *pq1, double *pq2, double *dq, double *b_body,
     double nhat[3] = {0,0,0};
     if (theta)
     {
-        nhat[0] = q12[0]/sin(theta/2);
-        nhat[1] = q12[1]/sin(theta/2);
-        nhat[2] = q12[2]/sin(theta/2);
+        nhat[0] = q12[1]/sin(theta/2);
+        nhat[1] = q12[2]/sin(theta/2);
+        nhat[2] = q12[3]/sin(theta/2);
     }
     omega[0] = fomega*nhat[0];
     omega[1] = fomega*nhat[1];
@@ -263,7 +264,10 @@ void rotate(double *dtime, double *pq1, double *pq2, double *dq, double *b_body,
     // https://digitalcommons.usu.edu/cgi/viewcontent.cgi?article=3221&context=smallsat
     double propterm[3] = {-(kp[0]*ae[1]), (-kp[1]*ae[2]), (-kp[2]*ae[3])}; 
     double derivterm[3] = {kd[0]*omega[0], kd[1]*omega[1], kd[2]*omega[2]};
-    double torque[3] = {propterm[0]-derivterm[0], propterm[1]-derivterm[1], propterm[2]-derivterm[2]};
+    torque[0] = propterm[0]-derivterm[0];
+    torque[1] = propterm[1]-derivterm[1];
+    torque[2] = propterm[2]-derivterm[2];
+    
     // convert magnetic field in body frame from nT to T
     double bT[3];
     bT[0] = b_body[0] * 1e-9;

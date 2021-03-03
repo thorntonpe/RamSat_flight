@@ -1028,7 +1028,7 @@ int CmdCurrentTelemetry(char* paramstr)
                     posatt.bx_body, posatt.by_body, posatt.bz_body, posatt.ubx_eci, posatt.uby_eci, posatt.ubz_eci,
                     posatt.ubx_body, posatt.uby_body, posatt.ubz_body, posatt.usx_eci, posatt.usy_eci, posatt.usz_eci,
                     posatt.usx_body, posatt.usy_body, posatt.usz_body,
-                    posatt.q0, posatt.q1, posatt.q2, posatt.q3);
+                    posatt.pq1[0], posatt.pq1[1], posatt.pq1[2], posatt.pq1[3]);
             he100_transmit_packet(he100_response, downlink_data);
             break;
             
@@ -1406,6 +1406,50 @@ int CmdStartDetumble(char *paramstr)
         err = 1;
     }
     return err;
+}
+
+// Send a new sun sensor mask array (turn on/off individual channels)
+int CmdSunSensorMask(char *paramstr, int *ss_m)
+{
+    int n_param;    // number of parameters sent to this command
+    
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%d %d %d %d %d %d %d %d",
+            &ss_m[0], &ss_m[1], &ss_m[2], &ss_m[3], &ss_m[4], &ss_m[5], &ss_m[6], &ss_m[7]);
+    if (n_param != 8)
+    {
+        sprintf(downlink_data,"RamSat: CmdSunSensorMask->wrong n_param: %d (expecting 8)",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+
+    // downlink status message
+    sprintf(downlink_data,"RamSat: CmdSunSensorMask successful (%d %d %d %d %d %d %d %d)",
+            ss_m[0], ss_m[1], ss_m[2], ss_m[3], ss_m[4], ss_m[5], ss_m[6], ss_m[7]);
+    he100_transmit_packet(he100_response, downlink_data);
+    return 0;
+}
+
+// Send a new sun sensor scalar array (scale individual channels)
+int CmdSunSensorScalar(char *paramstr, float *ss_s)
+{
+    int n_param;    // number of parameters sent to this command
+    
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%f %f %f %f %f %f %f %f",
+            &ss_s[0], &ss_s[1], &ss_s[2], &ss_s[3], &ss_s[4], &ss_s[5], &ss_s[6], &ss_s[7]);
+    if (n_param != 8)
+    {
+        sprintf(downlink_data,"RamSat: CmdSunSensorScalar->wrong n_param: %d (expecting 8)",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+
+    // downlink status message
+    sprintf(downlink_data,"RamSat: CmdSunSensorScalar successful (%f %f %f %f %f %f %f %f)",
+            ss_s[0], ss_s[1], ss_s[2], ss_s[3], ss_s[4], ss_s[5], ss_s[6], ss_s[7]);
+    he100_transmit_packet(he100_response, downlink_data);
+    return 0;
 }
     
 // Configure and initialize Level-0 telemetry

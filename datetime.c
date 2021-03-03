@@ -141,9 +141,9 @@ int get_juliandate(double *jdate)
     int nregs = 8;
     unsigned char firstreg = 0x00;
     unsigned char rtc_data[8];
-    int year, mon, day, hour, min, sec;
+    int year, mon, day, hour, min, sec, hsec;
     long int y, m, d;
-    double h, n, s;
+    double h, n, s, hs;
     long int jd = 0;
     double frac = 0.0;
     
@@ -158,12 +158,14 @@ int get_juliandate(double *jdate)
         hour = (10 * (rtc_data[3]>>4 & 0x3)) + (rtc_data[3] & 0x0f);
         min  = (10 * (rtc_data[2]>>4 & 0x7)) + (rtc_data[2] & 0x0f);
         sec =  (10 * (rtc_data[1]>>4 & 0x7)) + (rtc_data[1] & 0x0f);
+        hsec = (10 * (rtc_data[0]>>4 & 0xf)) + (rtc_data[0] & 0x0f);
         y = (long)year;
         m = (long)mon;
         d = (long)day;
         h = (double)hour;
         n = (double)min;
         s = (double)sec;
+        hs = (double)hsec;
         y = y + 8000L;
         if (m < 3)
         {
@@ -172,7 +174,8 @@ int get_juliandate(double *jdate)
         }
         
         jd = (y*365L) + (y/4L) - (y/100L) + (y/400L) - 1200820L + (m*153L+3L)/5L - 92L + d - 1L;
-        frac = ((h-12.0)+(n/60.0)+(s/3600.0))/24.0;
+        //frac = ((h-12.0)+(n/60.0)+(s/3600.0))/24.0;
+        frac = ((h-12.0)+(n/60.0)+(s/3600.0)+(hs/360000.0))/24.0;
         *jdate = (double)jd + frac;
     }
     else
