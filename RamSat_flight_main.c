@@ -10,6 +10,7 @@
 #include "clock.h"
 #include "PIC_config.h"
 #include "init.h"
+#include "sfm.h"
 #include "uart.h"
 #include "datetime.h"
 #include "eps_bat.h"
@@ -29,6 +30,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+
+#define STD_ADR1 0x00      // Address on SFM for startup data, written on initial deploy:
+#define STD_ADR2 0x70      // (00, 70, 00) is at the start of the eighth
+#define STD_ADR3 0x00      // 4k block in sector 0.
 
 // global variable for initialization data
 init_data_type init_data; // data structure for peripheral initialization
@@ -300,10 +305,19 @@ int main(void) {
         // if PDM #8 is off, try the other power circuit (PDM #10)
         if (init_data.antenna_on_status == 0)
         {
-            // try the secondary power circuit
+            // try the secondary power circuit on PDM #10
+            // first force the primary switch off
+            eps_antenna_off();
+            // then switch the backup power on
+            eps_antenna_on2();
+            // wait one second to allow antenna power to stabilize
+            TMR1=0;
+            while (TMR1 < 1000*TMR1MSEC);
+            // verify that PDM #10 is on (could shut itself off due to current limit)
+            init_data.antenna_on_status2 = eps_antenna_status2();
         }
-        // if the power to antenna is on, proceed with arm and deploy sequence
-        if (init_data.antenna_on_status == 1)
+        // if the power (or backup power) to antenna is on, proceed with arm and deploy sequence
+        if (init_data.antenna_on_status || init_data.antenna_on_status2)
         {
             unsigned char ants_response[2]; // holds response from antenna commands
             // get the initial antenna deployment status
@@ -357,20 +371,57 @@ int main(void) {
             init_data.ants3_deploy_status_lsb = ants_response[1];
             
             // turn off 3.3V power to the antenna via switched PDM #8 on EPS
-            eps_antenna_off();
+            if (init_data.antenna_on_status) 
+            {
+                eps_antenna_off();
+                // wait one second after power off
+                TMR1=0;
+                while (TMR1 < 1000*TMR1MSEC);
+                // verify that PDM #8 is off
+                init_data.antenna_off_status = eps_antenna_status();
+            }
+            
+            // turn off 3.3V power to the antenna via switched PDM #10 on EPS
+            if (init_data.antenna_on_status2)
+            {
+                eps_antenna_off2();
+                // wait one second after power off
+                TMR1=0;
+                while (TMR1 < 1000*TMR1MSEC);
+                // verify that PDM #8 is off
+                init_data.antenna_off_status2 = eps_antenna_status2();
+            }
+            
             init_data.eps_antenna_off_iserror = 0;
-            // wait one second after power off
-            TMR1=0;
-            while (TMR1 < 1000*TMR1MSEC);
-            // verify that PDM #8 is off
-            init_data.antenna_off_status = eps_antenna_status();
         }
         // get initial battery voltage for startup telemetry
         init_data.batv = eps_get_batv();
         
-        // write the initial data structure to SFM
-        
-    }
+        // all data for init_data structure has now been gathered
+        // write the initial deployment data structure to SFM
+        char startup_data[260];
+        sprintf(startup_data,"Deploy Telem: %ld %ld %ld %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x %d %d %d %d %d %d %d %d %.2f %s %s",
+                init_data.u2br_actual, init_data.i2c1br, init_data.i2c2br,
+                init_data.adc_iserror, init_data.sfm_iserror, init_data.sd_iserror,
+                init_data.rtc_flags_iserror, init_data.rtc_flags2_iserror, init_data.rtc_clear_iserror,
+                init_data.rtc_flags, init_data.rtc_flags2, init_data.pdt_status, init_data.pdt_flag,
+                init_data.eps_antenna_on_iserror, init_data.antenna_on_status, init_data.antenna_on_status2, 
+                init_data.eps_antenna_off_iserror, init_data.antenna_off_status, init_data.antenna_off_status2,
+                init_data.ants0_deploy_status_msb, init_data.ants0_deploy_status_lsb,
+                init_data.ants1_deploy_status_msb, init_data.ants1_deploy_status_lsb,
+                init_data.ants2_deploy_status_msb, init_data.ants2_deploy_status_lsb,
+                init_data.ants3_deploy_status_msb, init_data.ants3_deploy_status_lsb,
+                init_data.ants_deploy_time1_msb, init_data.ants_deploy_time1_lsb,
+                init_data.ants_deploy_time2_msb, init_data.ants_deploy_time2_lsb,
+                init_data.ants_deploy_time3_msb, init_data.ants_deploy_time3_lsb,
+                init_data.ants_deploy_time4_msb, init_data.ants_deploy_time4_lsb,
+                init_data.batv, init_data.rtc_halt_time, init_data.rtc_init_time
+                );
+        // erase the target 4k block , then write data in one page 
+        sfm_erase_4k(STD_ADR1, STD_ADR2, STD_ADR3);
+        int startup_len = strlen(startup_data);
+        sfm_write_page(STD_ADR1, STD_ADR2, startup_data, startup_len+1);
+    } // end of post-deploy initialization
 
     // Retrieve battery telemetry and downlink startup message
     float batv = eps_get_batv();

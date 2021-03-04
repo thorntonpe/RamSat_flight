@@ -45,7 +45,10 @@ void eps_cameras_on();
 void eps_cameras_off();
 void eps_antenna_on();
 void eps_antenna_off();
+void eps_antenna_on2();
+void eps_antenna_off2();
 unsigned char eps_antenna_status();
+unsigned char eps_antenna_status2();
 unsigned char eps_get_last_error();
 void eps_batvbus_reset();
 

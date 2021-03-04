@@ -38,8 +38,10 @@ typedef struct
     int  pdt_flag;          // the flag value read from serial flash memory on initialization
     unsigned char eps_antenna_on_iserror;  // error flag for EPS power on command to antenna (switch #8)
     unsigned char antenna_on_status;       // status value from command to turn on antenna power
+    unsigned char antenna_on_status2;      // status value from command to turn on backup antenna power
     unsigned char eps_antenna_off_iserror; // error flag for EPS power off command to antenna (switch #8)
     unsigned char antenna_off_status;      // status value from command to turn off antenna power
+    unsigned char antenna_off_status2;     // status value from command to turn off backup antenna power
     unsigned char ants0_deploy_status_msb; // MSB of antenna deployment status response (before arm)
     unsigned char ants0_deploy_status_lsb; // LSB of antenna deployment status response (before arm)
     unsigned char ants1_deploy_status_msb; // MSB of antenna deployment status response (after arm)

@@ -995,13 +995,13 @@ int CmdCurrentTelemetry(char* paramstr)
             sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving startup telemetry, index %d", index);
             he100_transmit_packet(he100_response, downlink_data);
             // telemetry is already in init_data structure from startup sequence
-            sprintf(downlink_data,"Init Telem: %ld %ld %ld %d %d %d %d %d %d %d %d %d %d %d %d %d %d 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x %d %d %d %d %d %d %d %d %.2f %s %s",
+            sprintf(downlink_data,"Init Telem: %ld %ld %ld %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x %d %d %d %d %d %d %d %d %.2f %s %s",
                     init_data.u2br_actual, init_data.i2c1br, init_data.i2c2br,
                     init_data.adc_iserror, init_data.sfm_iserror, init_data.sd_iserror,
                     init_data.rtc_flags_iserror, init_data.rtc_flags2_iserror, init_data.rtc_clear_iserror,
                     init_data.rtc_flags, init_data.rtc_flags2, init_data.pdt_status, init_data.pdt_flag,
-                    init_data.eps_antenna_on_iserror, init_data.antenna_on_status, 
-                    init_data.eps_antenna_off_iserror, init_data.antenna_off_status,
+                    init_data.eps_antenna_on_iserror, init_data.antenna_on_status, init_data.antenna_on_status2, 
+                    init_data.eps_antenna_off_iserror, init_data.antenna_off_status, init_data.antenna_off_status2,
                     init_data.ants0_deploy_status_msb, init_data.ants0_deploy_status_lsb,
                     init_data.ants1_deploy_status_msb, init_data.ants1_deploy_status_lsb,
                     init_data.ants2_deploy_status_msb, init_data.ants2_deploy_status_lsb,

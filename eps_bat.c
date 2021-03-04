@@ -836,6 +836,34 @@ void eps_antenna_off()
     eps_read_response(2);
 }
 
+// Turn on PDM Switch #10, 3.3V backup power to Antenna
+void eps_antenna_on2()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x50;
+    command[1] = 0x0a;
+    int delay = 0;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+}
+
+// Turn off PDM Switch #10, 3.3V backup power to Antenna
+void eps_antenna_off2()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x51;
+    command[1] = 0x0a;
+    int delay = 0;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+}
+
 // Check status of PDM Switch #8, 3.3V power to Antenna (1=on, 0=off))
 unsigned char eps_antenna_status()
 {
@@ -843,6 +871,22 @@ unsigned char eps_antenna_status()
     int nbytes = 2;
     command[0] = 0x54;
     command[1] = 0x08;
+    int delay = 2;
+    // send command
+    eps_write_command(nbytes, delay);
+    // read response
+    eps_read_response(2);
+    // the useful status byte is the second byte returned
+    return response[1];    
+}
+
+// Check status of PDM Switch #10, 3.3V backup power to Antenna (1=on, 0=off))
+unsigned char eps_antenna_status2()
+{
+    // load command and parameters
+    int nbytes = 2;
+    command[0] = 0x54;
+    command[1] = 0x0a;
     int delay = 2;
     // send command
     eps_write_command(nbytes, delay);
