@@ -139,7 +139,7 @@ void rbody(double *att, double *in_vector, double *out_vector)
     out_vector[2] = in_vector[0]*att[6] + in_vector[1]*att[7] + in_vector[2]*att[8];
 }
 
-void desired_q(double *att, double *nadir_eci, double *q)
+void desired_q(double *att, double *nadir_eci, double *q, double *offnadir_angle, double *nadir_body_out)
 {
     double nadir_body[3];
     rbody(att, nadir_eci, nadir_body);
@@ -157,6 +157,12 @@ void desired_q(double *att, double *nadir_eci, double *q)
     zvec_rotaxis[0] = (zvec[1]*nadir_body[2]-zvec[2]*nadir_body[1]);
     zvec_rotaxis[1] = (zvec[2]*nadir_body[0]-zvec[0]*nadir_body[2]);
     zvec_rotaxis[2] = (zvec[0]*nadir_body[1]-zvec[1]*nadir_body[0]);
+    
+    // save for output
+    *offnadir_angle = zvec_angle;
+    nadir_body_out[0] = nadir_body[0];
+    nadir_body_out[1] = nadir_body[1];
+    nadir_body_out[2] = nadir_body[2];
     
     // calculate the vector part of quaternion
     q[1] = zvec_rotaxis[0]*sin(zvec_angle/2.0);

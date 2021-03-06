@@ -7,6 +7,7 @@
 */
 
 #include "xc.h"
+#include "autoimg.h"
 #include "command.h"
 #include "sd_card.h"  // includes FError as a global mailbox for SD errors
 #include "he100.h"
@@ -1408,6 +1409,154 @@ int CmdStartDetumble(char *paramstr)
     return err;
 }
 
+// begin a manual PWM actuation with iMTQ, specifying signed values from -1000 to 1000 for
+// each axis, and a duration in msec
+int CmdImtqPWM(char *paramstr)
+{
+    int err = 0;
+    int n_param;                       // number of parameters passed to command
+    signed short pwm_x, pwm_y, pwm_z;  // PWM in 0.1% (-1000 to 1000)
+    unsigned short msec;               // number of miliseconds to actuate magnetorquers
+    int do_report;                     // if set, do a report on coil current
+    imtq_resp_common imtq_common;      // iMTQ response from every command
+    imtq_resp_coilcur imtq_coilcur;    // iMTQ response for get_coil_current
+    float percent_x, percent_y, percent_z;
+    
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%hd %hd %hd %hu %d",&pwm_x, &pwm_y, &pwm_z, &msec, &do_report);
+    if (n_param != 5)
+    {
+        sprintf(downlink_data,"RamSat: CmdImtqPWM->wrong n_param: %d (expecting 5)",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
+    percent_x = (float)pwm_x/10.0;
+    percent_y = (float)pwm_y/10.0;
+    percent_z = (float)pwm_z/10.0;
+    
+    // send iMTQ command to start the PWM actuation
+    imtq_start_actpwm(&imtq_common, pwm_x, pwm_y, pwm_z, msec);
+    // check the response and report status
+    if (imtq_common.cc == 0x07 && imtq_common.stat == 0x80)
+    {
+        // good iMTQ response
+        sprintf(downlink_data,"RamSat: iMTQ PWM active (%.1f %.1f %.1f) for %hu msec",
+                percent_x, percent_y, percent_z, msec);
+        he100_transmit_packet(he100_response, downlink_data);
+        
+        // if user requested reporting, gather and downlink coil current data
+        if (do_report)
+        {
+            imtq_get_coil_current(&imtq_common, &imtq_coilcur);
+            // check the response
+            if (imtq_common.cc == 0x44 && imtq_common.stat == 0x80)
+            {
+                // good response, downlink results
+                sprintf(downlink_data,"RamSat: iMTQ report coil currents: %hd %hd %hd",
+                        imtq_coilcur.x, imtq_coilcur.y, imtq_coilcur.z);
+                he100_transmit_packet(he100_response, downlink_data);
+            }
+            else
+            {
+                // error in iMTQ response
+                sprintf(downlink_data,"RamSat: CmdImtqPWM->iMTQ coilcur Error: cc=0x%02x, stat=0x%02x",
+                        imtq_common.cc,imtq_common.stat);
+                he100_transmit_packet(he100_response, downlink_data);
+                err = 1;
+            }
+            
+        } // end do_report
+    } // end good response to start PWM actuation
+    else
+    {
+        // error in iMTQ response
+        sprintf(downlink_data,"RamSat: CmdImtqPWM->iMTQ Error: cc=0x%02x, stat=0x%02x",
+                imtq_common.cc,imtq_common.stat);
+        he100_transmit_packet(he100_response, downlink_data);
+        err = 1;
+    }
+    return err;
+}
+
+int CmdConfigAutoImage(char *paramstr, auto_image_type *autoimgp)
+{
+    int err = 0;
+    int n_param;              // number of parameters passed to command
+    // temporary variables for sscanf() 
+    int on, max_images;
+    double min_lon, max_lon, min_lat, max_lat, max_res, max_offnadir;
+
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%d %lf %lf %lf %lf %lf %lf %d",
+            &on, &min_lon, &max_lon, &min_lat, &max_lat, &max_res, &max_offnadir, &max_images);
+    if (n_param != 8)
+    {
+        sprintf(downlink_data,"RamSat: CmdConfigAutoImage->wrong n_param: %d (expecting 8)",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+
+    // in order to keep track of meta data, max_images for auto-imaging is 16
+    if (max_images > 16)
+    {
+        sprintf(downlink_data,"RamSat: CmdConfigAutoImage->Error max_images must be <= 16 (you asked for %d)",max_images);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
+    // copy parameters to data struct
+    autoimgp->on = on;
+    autoimgp->min_lon = min_lon;
+    autoimgp->max_lon = max_lon;
+    autoimgp->min_lat = min_lat;
+    autoimgp->max_lat = max_lat;
+    autoimgp->max_res = max_res;
+    autoimgp->max_offnadir = max_offnadir;
+    autoimgp->max_images = max_images;
+    // initialize other parts of autoimg struct
+    autoimgp->nextimg = 0;
+    autoimgp->time_since_last = 90; // capture image at next opportunity, if on
+    
+    // return success message
+    sprintf(downlink_data,"RamSat: CmdConfigAutoImage->Success: %d %lf %lf %lf %lf %lf %lf %d %ld",
+            autoimgp->on, autoimgp->min_lon, autoimgp->max_lon, autoimgp->min_lat,
+            autoimgp->max_lat, autoimgp->max_res, autoimgp->max_offnadir, autoimgp->nextimg,
+            autoimgp->time_since_last);
+    he100_transmit_packet(he100_response, downlink_data);                
+    return err;
+}
+
+// Turn auto imaging on / off
+int CmdAutoImageOn(char *paramstr, auto_image_type *autoimgp)
+{
+    int err = 0;
+    int n_param;              // number of parameters passed to command
+    // temporary variables for sscanf() 
+    int on;
+
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%d",
+            &on);
+    if (n_param != 1)
+    {
+        sprintf(downlink_data,"RamSat: CmdAutoImageOn->wrong n_param: %d (expecting 1)",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
+    // copy parameters to data struct
+    autoimgp->on = on;
+    // initialize other parts of autoimg struct
+    autoimgp->time_since_last = 90; // capture image at next opportunity, if on
+    
+    // return success message
+    sprintf(downlink_data,"RamSat: CmdAutoImageOn->Success: %d %ld",
+            autoimgp->on, autoimgp->time_since_last);
+    he100_transmit_packet(he100_response, downlink_data);                
+    return err;
+}
+
 // Send a new sun sensor mask array (turn on/off individual channels)
 int CmdSunSensorMask(char *paramstr, int *ss_m)
 {
@@ -1489,12 +1638,12 @@ int CmdConfigTelem0(char *paramstr)
     
     // write page to SFM
     len = strlen(page);
-    sfm_write_page(TM0_ADDR1, TM0_ADDR2, page, len);
+    sfm_write_page(TM0_ADDR1, TM0_ADDR2, page, len+1);
     
     // write special string for pagedata on next page
     sprintf(page2,"%s","X");
     len=strlen(page2);
-    sfm_write_page(TM0_ADDR1, TM0_ADDR2+1, page2, len);
+    sfm_write_page(TM0_ADDR1, TM0_ADDR2+1, page2, len+1);
     
     // update the global variables so the new telemetry configuration takes
     // effect immediately
@@ -1553,12 +1702,12 @@ int CmdConfigTelem1(char *paramstr)
     
     // write page to SFM
     len = strlen(page);
-    sfm_write_page(TM1_ADDR1, TM1_ADDR2, page, len);
+    sfm_write_page(TM1_ADDR1, TM1_ADDR2, page, len+1);
     
     // write special string for pagedata on next page
     sprintf(page2,"%s","X");
     len=strlen(page2);
-    sfm_write_page(TM1_ADDR1, TM1_ADDR2+1, page2, len);
+    sfm_write_page(TM1_ADDR1, TM1_ADDR2+1, page2, len+1);
     
     // update the global variables so the new telemetry configuration takes
     // effect immediately
@@ -1617,12 +1766,12 @@ int CmdConfigTelem2(char *paramstr)
     
     // write page to SFM
     len = strlen(page);
-    sfm_write_page(TM2_ADDR1, TM2_ADDR2, page, len);
+    sfm_write_page(TM2_ADDR1, TM2_ADDR2, page, len+1);
     
     // write special string for pagedata on next page
     sprintf(page2,"%s","X");
     len=strlen(page2);
-    sfm_write_page(TM2_ADDR1, TM2_ADDR2+1, page2, len);
+    sfm_write_page(TM2_ADDR1, TM2_ADDR2+1, page2, len+1);
     
     // update the global variables so the new telemetry configuration takes
     // effect immediately

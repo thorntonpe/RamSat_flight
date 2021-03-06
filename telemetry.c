@@ -127,22 +127,18 @@ void telem_lev0_read_metadata(telem_control_type* c)
     // read metadata from SFM for this telemetry level
     sfm_read_page(TM0_ADDR1, TM0_ADDR2, page1);
     // copy from data (int array) to meta_data (char array)
-    for (i=0 ; i<255 ; i++)
+    for (i=0 ; i<256 ; i++)
     {
         meta_data[i] = page1[i] & 0x00ff;
     }
-    // force null-termination in last place, for safety
-    meta_data[255]=0;
 
     // read pagedata from SFM for this telemetry level
     sfm_read_page(TM0_ADDR1, TM0_ADDR2+1, page2);
     // copy from data (int array) to page_data (char array)
-    for (i=0 ; i<255 ; i++)
+    for (i=0 ; i<256 ; i++)
     {
         page_data[i] = page2[i] & 0x00ff;
     }
-    // force null-termination in last place, for safety
-    page_data[255]=0;
     
     // scan meta data from string into data struct
     sscanf(meta_data,"%d %d %d %d %d %ld %d %s %s",&c->record_period, &c->rec_per_page, 
@@ -152,7 +148,7 @@ void telem_lev0_read_metadata(telem_control_type* c)
     // scan page_data from string into data struct
     sscanf(page_data,"%s",c->pagedata);
     // if this is the special string, then replace with null
-    if (strcmp(c->pagedata,"X") == 1) strcpy(c->pagedata,"");
+    if (strcmp(c->pagedata,"X") == 0) strcpy(c->pagedata,"");
 }
 
 void telem_lev1_read_metadata(telem_control_type* c)
@@ -166,22 +162,18 @@ void telem_lev1_read_metadata(telem_control_type* c)
     // read metadata from SFM for this telemetry level
     sfm_read_page(TM1_ADDR1, TM1_ADDR2, page1);
     // copy from data (int array) to meta_data (char array)
-    for (i=0 ; i<255 ; i++)
+    for (i=0 ; i<256 ; i++)
     {
         meta_data[i] = page1[i] & 0x00ff;
     }
-    // force null-termination in last place, for safety
-    meta_data[255]=0;
 
     // read pagedata from SFM for this telemetry level
     sfm_read_page(TM1_ADDR1, TM1_ADDR2+1, page2);
     // copy from data (int array) to page_data (char array)
-    for (i=0 ; i<255 ; i++)
+    for (i=0 ; i<256 ; i++)
     {
         page_data[i] = page2[i] & 0x00ff;
     }
-    // force null-termination in last place, for safety
-    page_data[255]=0;
     
     // scan meta data from string into data struct
     sscanf(meta_data,"%d %d %d %d %d %ld %d %s %s",&c->record_period, &c->rec_per_page, 
@@ -191,7 +183,7 @@ void telem_lev1_read_metadata(telem_control_type* c)
     // scan page_data from string into data struct
     sscanf(page_data,"%s",c->pagedata);
     // if this is the special string, then replace with null
-    if (strcmp(c->pagedata,"X") == 1) strcpy(c->pagedata,"");
+    if (strcmp(c->pagedata,"X") == 0) strcpy(c->pagedata,"");
 }
 
 void telem_lev2_read_metadata(telem_control_type* c)
@@ -205,22 +197,18 @@ void telem_lev2_read_metadata(telem_control_type* c)
     // read metadata from SFM for this telemetry level
     sfm_read_page(TM2_ADDR1, TM2_ADDR2, page1);
     // copy from data (int array) to meta_data (char array)
-    for (i=0 ; i<255 ; i++)
+    for (i=0 ; i<256 ; i++)
     {
         meta_data[i] = page1[i] & 0x00ff;
     }
-    // force null-termination in last place, for safety
-    meta_data[255]=0;
 
     // read pagedata from SFM for this telemetry level
     sfm_read_page(TM2_ADDR1, TM2_ADDR2+1, page2);
     // copy from data (int array) to page_data (char array)
-    for (i=0 ; i<255 ; i++)
+    for (i=0 ; i<256 ; i++)
     {
         page_data[i] = page2[i] & 0x00ff;
     }
-    // force null-termination in last place, for safety
-    page_data[255]=0;
     
     // scan meta data from string into data struct
     sscanf(meta_data,"%d %d %d %d %d %ld %d %s %s",&c->record_period, &c->rec_per_page, 
@@ -230,7 +218,7 @@ void telem_lev2_read_metadata(telem_control_type* c)
     // scan page_data from string into data struct
     sscanf(page_data,"%s",c->pagedata);
     // if this is the special string, then replace with null
-    if (strcmp(c->pagedata,"X") == 1) strcpy(c->pagedata,"");
+    if (strcmp(c->pagedata,"X") == 0) strcpy(c->pagedata,"");
 }
 
 void telem_gather_lev0(telem_control_type* c)
@@ -307,7 +295,7 @@ void telem_gather_lev0(telem_control_type* c)
     scaled_value = bat_get_batv();
     // voltage is reported in V, so multiply by 100 to get value that captures 
     // down to hundredths of a volt.
-    sprintf(new_str,",%3.0lf",scaled_value * 100.0);
+    sprintf(new_str,",%3.0f",scaled_value * 100.0);
     strcat(c->pagedata,new_str);
     // increment the telemetry counter
     c->record_count = c->record_count + 1;
@@ -329,7 +317,7 @@ void telem_gather_lev0(telem_control_type* c)
             c->page_per_block, c->first_sector, c->num_sectors, c->record_count,
             c->page_count, c->first_timestamp, c->last_timestamp);
     len = strlen(meta_data);
-    sfm_write_page(TM0_ADDR1, TM0_ADDR2, meta_data, len);
+    sfm_write_page(TM0_ADDR1, TM0_ADDR2, meta_data, len+1);
     
     // save the current page data to SFM to allow seamless restart
     if (c->pagedata[0]==0)
@@ -341,7 +329,7 @@ void telem_gather_lev0(telem_control_type* c)
         strcpy(page_data,c->pagedata);
     }
     len = strlen(page_data);
-    sfm_write_page(TM0_ADDR1, TM0_ADDR2+1, page_data, len);
+    sfm_write_page(TM0_ADDR1, TM0_ADDR2+1, page_data, len+1);
 }
 
 void telem_gather_lev1(telem_control_type* c)
@@ -434,7 +422,7 @@ void telem_gather_lev1(telem_control_type* c)
             c->page_per_block, c->first_sector, c->num_sectors, c->record_count,
             c->page_count, c->first_timestamp, c->last_timestamp);
     len = strlen(meta_data);
-    sfm_write_page(TM1_ADDR1, TM1_ADDR2, meta_data, len);
+    sfm_write_page(TM1_ADDR1, TM1_ADDR2, meta_data, len+1);
     
     // save the current page data to SFM to allow seamless restart
     if (c->pagedata[0]==0)
@@ -446,7 +434,7 @@ void telem_gather_lev1(telem_control_type* c)
         strcpy(page_data,c->pagedata);
     }
     len = strlen(page_data);
-    sfm_write_page(TM1_ADDR1, TM1_ADDR2+1, page_data, len);
+    sfm_write_page(TM1_ADDR1, TM1_ADDR2+1, page_data, len+1);
 }
 
 void telem_gather_lev2(telem_control_type* c)
@@ -519,8 +507,8 @@ void telem_gather_lev2(telem_control_type* c)
     }
     
     // gather telemetry, format, and concatenate to page string
-    sprintf(record_data," %20.7lf,%5.0lf,%5.0lf,%5.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%7.3lf,%7.3lf,%7.3lf,%5.3lf",
-            posatt.jd, posatt.px_eci/10.0, posatt.py_eci/10.0, posatt.pz_eci/10.0, posatt.lst,
+    sprintf(record_data," %16.7lf,%6.0lf,%6.0lf,%6.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf,%7.3lf,%7.3lf,%7.3lf,%5.3lf,%4.0lf,%4.0lf,%4.0lf,%4.0lf",
+            posatt.jd, posatt.px_eci, posatt.py_eci, posatt.pz_eci, posatt.lst,
             posatt.ubx_eci*100.0, posatt.uby_eci*100.0, posatt.ubz_eci*100.0,
             posatt.ubx_body*100.0, posatt.uby_body*100.0, posatt.ubz_body*100.0,
             posatt.usx_eci*100.0, posatt.usy_eci*100.0, posatt.usz_eci*100.0,
@@ -529,8 +517,9 @@ void telem_gather_lev2(telem_control_type* c)
             posatt.pq2[0]*100.0, posatt.pq2[1]*100.0, posatt.pq2[2]*100, posatt.pq2[3]*100.0,
             posatt.dq[0]*100.0, posatt.dq[1]*100.0, posatt.dq[2]*100, posatt.dq[3]*100.0,
             posatt.omega[0]*100.0, posatt.omega[1]*100.0, posatt.omega[2]*100.0,
-            posatt.torque[0]*10000.0, posatt.torque[1]*10000.0, posatt.torque[2]*10000.0,
-            posatt.dipole[0], posatt.dipole[1], posatt.dipole[2], posatt.dtime);
+            posatt.torque[0]*1000000.0, posatt.torque[1]*1000000.0, posatt.torque[2]*1000000.0,
+            posatt.dipole[0], posatt.dipole[1], posatt.dipole[2], posatt.dtime,
+            posatt.offnadir_angle, posatt.nadir_body[0]*100.0, posatt.nadir_body[1]*100.0, posatt.nadir_body[2]*100.0);
     strcat(c->pagedata,record_data);
     // increment the telemetry counter
     c->record_count = c->record_count + 1;
@@ -552,7 +541,7 @@ void telem_gather_lev2(telem_control_type* c)
             c->page_per_block, c->first_sector, c->num_sectors, c->record_count,
             c->page_count, c->first_timestamp, c->last_timestamp);
     len = strlen(meta_data);
-    sfm_write_page(TM2_ADDR1, TM2_ADDR2, meta_data, len);
+    sfm_write_page(TM2_ADDR1, TM2_ADDR2, meta_data, len+1);
     
     // save the current page data to SFM to allow seamless restart
     if (c->pagedata[0]==0)
@@ -564,5 +553,5 @@ void telem_gather_lev2(telem_control_type* c)
         strcpy(page_data,c->pagedata);
     }
     len = strlen(page_data);
-    sfm_write_page(TM2_ADDR1, TM2_ADDR2+1, page_data, len);
+    sfm_write_page(TM2_ADDR1, TM2_ADDR2+1, page_data, len+1);
 }

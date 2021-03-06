@@ -17,6 +17,8 @@
 #include "imtq.h"
 #include "ants.h"
 #include "he100.h"
+#include "autoimg.h"
+#include "arducam_user.h"
 #include "security.h"
 #include "telemetry.h"
 #include "command.h"
@@ -34,6 +36,10 @@
 #define STD_ADR1 0x00      // Address on SFM for startup data, written on initial deploy:
 #define STD_ADR2 0x70      // (00, 70, 00) is at the start of the eighth
 #define STD_ADR3 0x00      // 4k block in sector 0.
+
+#define AMD_ADR1 0x00      // Address on SFM for auto-image metadata
+#define AMD_ADR2 0x90      // (00, 90, 00) is at the start of the tenth
+#define AMD_ADR3 0x00      // 4k block in sector 0.
 
 // global variable for initialization data
 init_data_type init_data; // data structure for peripheral initialization
@@ -223,7 +229,7 @@ int main(void) {
     // flags controlling the main program loop
     int isNewTLE = 0;   // flag is set immediately after a new TLE is uplinked
     int isGoodTLE = 0;  // flag is set when sgp4 initialization is complete after a new TLE
-    int isFirst    ;    // flag for the first time through position calculations with new TLE
+    int isFirst;        // flag for the first time through position calculations with new TLE
     double pq1[4], pq2[4];  // two most recent position quaternions from triad()
     double jd1, jd2;        // times (julian date) for two most recent passes through triad()
     double dtime = 0.0;     // time difference between position quaternion calculations
@@ -231,17 +237,15 @@ int main(void) {
     int n_rotate = 0;
     int ss_m[8] = {1,1,1,1,1,1,1,1};   // sun sensor mask (1=use, 0=reject)
     float ss_s[8] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0}; // sun sensor scalar
-    
-    
     // track maximum value for sun-sensor vectors
     // initialize with a small value so it can be used for division
     double sxybodymag_max = 1.0;
     float bcr3_thresh = 3.0; // threshold voltage for -Z panel indicating sunlight
     
-    // precalculated ellipsoid flattening parameter
-    double f = 0.003352811;    // flattening parameter for ellipsoid
-    double f2 = (1.0-f)*(1.0-f);
-    
+    // data structure for the auto-imaging control data (off on startup)
+    auto_image_type autoimg;
+    autoimg.on = 0;
+
     // Initialize the PIC24 timers
     // Initialize TIMER1 (16-bit), using system clock and 1:256 prescalar
     // This is a general purpose timer used in multiple routines for device delays
@@ -543,6 +547,94 @@ int main(void) {
                 telem_lev2_elapsed = 0;
             }
             
+            // Check conditions for autonomous image capture.
+            // This uses the most recent posatt data to assess position and attitude.
+            // Only captures an image pair if all the following conditions are met:
+            // 1. auto-image flag is true
+            // 2. isGoodTLE is true, but not isFirst
+            // 3. current position (lon,lat) is within auto bounding box
+            // 4. RamSat-Earth-Sun angle is less than autoimg.max_res (sunlit)
+            // 5. offnadir angle is less than autoimg.max_offnadir (good pointing)
+            // 6. time since last image greater than 45 min (don't shoot a bunch of images in one orbit)
+            // 7. current image count less than autoimg.max_images
+            // Do these checks a few at a time, in series
+            autoimg.capture = 0;
+            autoimg.time_since_last++;
+            if (autoimg.on && isGoodTLE && ~isFirst)
+            {
+                // temp for testing
+                posatt.lon = -84.0;
+                posatt.cor_lat = 36.0;
+                posatt.res = 0.0;
+                posatt.offnadir_angle = 0.0;
+                if ((posatt.lon >= autoimg.min_lon) && (posatt.lon <= autoimg.max_lon))
+                {
+                    if ((posatt.cor_lat >= autoimg.min_lat) && (posatt.cor_lat <= autoimg.max_lat))
+                    {
+                        if ((posatt.res <= autoimg.max_res) && (posatt.offnadir_angle <= autoimg.max_offnadir))
+                        {
+                            if ((autoimg.time_since_last >= 5) && (autoimg.nextimg <= autoimg.max_images))
+                            {
+                                // Take a pair of auto-images and save to SD card
+                                // disable UART2 interrupt
+                                _U2RXIE = 0;
+                                
+                                // power on and initialize the cameras
+                                eps_cameras_on();
+                                int camera_init_err = init_arducam();
+                                // capture auto image on each camera
+                                int auto_image_err = arducam_auto_image(autoimg.nextimg);
+                                // power off the cameras
+                                eps_cameras_off();
+                                
+                                // save image metadata to SFM
+                                char isodatetime[30];
+                                char image_metadata[256];
+                                int iso_err;
+                                iso_err = get_isodatetime(isodatetime);
+                                sprintf(image_metadata,"AUTMETA: %03d %s %.2lf %.2lf %.2lf %.2lf %.2lf %.3lf %.3lf %.3lf %.3lf",
+                                        autoimg.nextimg, isodatetime, posatt.lon, posatt.cor_lat, posatt.elev, posatt.res,
+                                        posatt.offnadir_angle, posatt.pq2[0], posatt.pq2[1], posatt.pq2[2], posatt.pq2[3]);
+                                // if this is the first image, erase block
+                                if (autoimg.nextimg == 0)
+                                {
+                                    sfm_erase_4k(AMD_ADR1, AMD_ADR2, AMD_ADR3);
+                                }
+                                // get length and write metadata on page corresponding to image number
+                                int metadata_len = strlen(image_metadata);
+                                sfm_write_page(AMD_ADR1, AMD_ADR2+autoimg.nextimg, image_metadata, metadata_len+1);
+                                
+                                // broadcast for auto image capture
+                                sprintf(downlink_msg,"RamSatAutoImage: Captured Auto Image #%d %d %d",
+                                        autoimg.nextimg, camera_init_err, auto_image_err);
+                                he100_transmit_packet(he100_response, downlink_msg);
+                                
+                                // delay to avoid collision with beacon message
+                                TMR1=0;
+                                while(TMR1 < 50*TMR1MSEC);
+
+                                // reset the UART2 receive traps
+                                nhbytes = 0;
+                                ndbytes = 0;
+                                ishead_flag = 0;
+                                isdata_flag = 0;
+                                he100_receive = 0;
+                                // clear any overflow error, which also clears the receive buffer
+                                U2STAbits.OERR = 0;
+                                // restart the interrupt handler
+                                _U2RXIE = 1;
+                                
+                                // update auto image control data
+                                autoimg.capture = 1;           // indicates capture in this interval
+                                autoimg.time_since_last = 0;   // reset time counter
+                                autoimg.nextimg++;             // advance to next image number
+                                
+                            }
+                        }
+                    }
+                }
+            }
+            
             // Now transmit the one-minute beacon message
             // disable UART2 interrupt
             _U2RXIE = 0;
@@ -696,6 +788,18 @@ int main(void) {
                             cmd_err = CmdStartDetumble(cmd_paramstr);
                             break;
                             
+                        case 20: // Manually activate magnetorquers in PWM mode
+                            cmd_err = CmdImtqPWM(cmd_paramstr);
+                            break;
+                            
+                        case 30: // Set parameters for auto-imaging
+                            cmd_err = CmdConfigAutoImage(cmd_paramstr, &autoimg);
+                            break;
+                            
+                        case 31: // Switch on/off auto-imaging
+                            cmd_err = CmdAutoImageOn(cmd_paramstr, &autoimg);
+                            break;
+                            
                         case 70: // overwrite the default sun-sensor mask array
                             cmd_err = CmdSunSensorMask(cmd_paramstr, ss_m);
                             break;
@@ -763,7 +867,7 @@ int main(void) {
         }
         
         // After any new uplink commands have been processed,
-        // enter the main work segment of the program loop
+        // enter the attitude determination and control segment of the program loop
         
         // If the TLE was just uplinked, initialize the SGP4 parameters
         double sat_params[N_SAT_PARAMS]; // parameters needed by the SGP4 code
@@ -774,6 +878,7 @@ int main(void) {
             isNewTLE = 0;
             isGoodTLE = 1;
             isFirst = 1;   // indicate the first pass with new TLE
+            n_rotate = 0;
         }
         
         // If there is a good TLE, use it and RTC data to make an orbital prediction
@@ -854,6 +959,9 @@ int main(void) {
                 sat_lon_lat_elev(jd, pos, &lon, &lat, &elev, &lst);
                 
                 // latitude corrected for ellipsoid (also in radians))
+                // precalculated ellipsoid flattening parameter
+                double f = 0.003352811;    // flattening parameter for ellipsoid
+                double f2 = (1.0-f)*(1.0-f);
                 double cor_lat = atan(tan(lat)/f2);
                 
                 // calculate the decimal year, needed for WMM routine
@@ -932,7 +1040,6 @@ int main(void) {
                 // only try to use sun sensors if in sunlight
                 double spx, snx, spy, sny;
                 double sx_body, sy_body, sz_body;
-                double sxybodymag;
                 if (cos_res > 0.0)
                 {
                     // read the sun sensors (2 each for +x, -x, +y, -y)
@@ -1009,6 +1116,8 @@ int main(void) {
                     jd1 = jd;
                     isFirst = 0;                    
                 }
+                // if not first pass, then there should be good data to work with to
+                // calculate angular velocity
                 else
                 {
                     // calculate dtime in seconds from julian days for each position quaternion
@@ -1034,7 +1143,9 @@ int main(void) {
 
                         // calculate the desired quaternion from nadir_eci and +Z
                         double dq[4];  // the returned quaternion from desired_q()
-                        desired_q(att, nadir_eci, dq);
+                        double offnadir_angle; // angle in radians between +z axis and nadir_body
+                        double nadir_body[3];  // unit vector in nadir direction, body coordinates
+                        desired_q(att, nadir_eci, dq, &offnadir_angle, nadir_body);
 
                         // rotation to achieve nadir pointing
                         double qe[4];     // quaternion error from rotate()
@@ -1052,20 +1163,22 @@ int main(void) {
 
                         // Now transmit the one-minute beacon message
                         // disable UART2 interrupt
-                        //_U2RXIE = 0;
-                        //sprintf(downlink_msg,"Omega test: %.3lf %.3lf %.3lf : %lf %lf %lf : %.3lf %.3lf %.3lf",
-                        //        omega[0], omega[1], omega[2], torque[0], torque[1], torque[2], dipole[0], dipole[1], dipole[2]);
-                        //he100_transmit_packet(he100_response, downlink_msg);
+                        /*
+                        _U2RXIE = 0;
+                        sprintf(downlink_msg,"RamSat: posatt test %lf : %.4lf %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf",
+                                (jd2-jd1), pq1[0], pq1[1], pq1[2], pq1[3], pq2[0], pq2[1], pq2[2], pq2[3], dq[0], dq[1], dq[2], dq[3], b_body[0], b_body[1], b_body[2], omega[0], omega[1], omega[2], dipole[0], dipole[1], dipole[2]);
+                        he100_transmit_packet(he100_response, downlink_msg);
                         // reset the UART2 receive traps
-                        //nhbytes = 0;
-                        //ndbytes = 0;
-                        //ishead_flag = 0;
-                        //isdata_flag = 0;
-                        //he100_receive = 0;
+                        nhbytes = 0;
+                        ndbytes = 0;
+                        ishead_flag = 0;
+                        isdata_flag = 0;
+                        he100_receive = 0;
                         // clear any overflow error, which also clears the receive buffer
-                        //U2STAbits.OERR = 0;
+                        U2STAbits.OERR = 0;
                         // restart the interrupt handler
-                        //_U2RXIE = 1;
+                        _U2RXIE = 1;
+                        */
 
                         // once all orbital and attitude calculations are complete,
                         // populate the position and attitude data struct.
@@ -1136,6 +1249,10 @@ int main(void) {
                         posatt.dipole[0] = dipole[0];
                         posatt.dipole[1] = dipole[1];
                         posatt.dipole[2] = dipole[2];
+                        posatt.offnadir_angle = offnadir_angle * (180.0/PI);
+                        posatt.nadir_body[0] = nadir_body[0];
+                        posatt.nadir_body[1] = nadir_body[1];
+                        posatt.nadir_body[2] = nadir_body[2];
 
                         // swap the current with previous pq and jd
                         pq1[0] = pq2[0];
@@ -1144,11 +1261,13 @@ int main(void) {
                         pq1[3] = pq2[3];
                         jd1 = jd2;
 
-                        //n_rotate++;
-                        //if (n_rotate > 10)
-                        //{
-                        //    isGoodTLE = 0;
-                        //}
+                        /*
+                        n_rotate++;
+                        if (n_rotate > 100)
+                        {
+                            isGoodTLE = 0;
+                        }
+                        */
                     } // end of dtime > min_dtime
                 }  // end of not first pass
             }   // end of no error on sgp4

@@ -12,6 +12,7 @@
 // function prototypes 
 int test_arducam_spi(void);
 int init_arducam(void);
+int arducam_auto_image(int image_number);
 
 
 

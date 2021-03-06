@@ -56,12 +56,15 @@ typedef struct
     double cos_res;     // cosine of RamSat-Earth-Sun angle (+=sunlit)
     double res;         // RamSat-Earth-Sun angle (degrees)
     double dtime;       // time increment between pq1 and pq2
+    double offnadir_angle; // angle (degrees) between +Z axis and nadir-pointing vector (body)
     double pq1[4];      // position quaternion #1
     double pq2[4];      // position quaternion #2
     double dq[4];       // desired quaternion
     double omega[3];    // angular velocity (rad/s)
     double dipole[3];   // desired dipole (A m^2)
     double torque[3];   // torque (N m)
+    double nadir_body[3]; // nadir-pointing unit vector in body coordinate
+
 } position_attitude_type;
 
 
