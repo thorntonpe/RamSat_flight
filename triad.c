@@ -178,14 +178,21 @@ void desired_q(double *att, double *nadir_eci, double *q, double *offnadir_angle
     //q[3] = zvec_rotaxis[2];
 }
 
-void rotate(double *dtime, double *pq1, double *pq2, double *dq, double *ae, double *torque, double *b_body, double *omega, double *dipole)
+void rotate(double ts_in, double zeta_in, double *dtime, double *pq1, double *pq2, double *dq, double *ae, double *torque, double *b_body, double *omega, double *dipole)
 {
     // b_body is in nT, converted here to T
     // omega is radians/sec double[3]
     // dipole return is in Am^2 double[3]
     
-    double ts[3] = {900, 900, 900};                    // settling time in seconds
-    double zeta[3] = {0.65, 0.65, 0.65};            // damping coefficient
+    double ts[3];              // settling time in seconds
+    double zeta[3];            // damping coefficient
+    // user specified coefficients
+    ts[0] = ts_in;
+    ts[1] = ts_in;
+    ts[2] = ts_in;
+    zeta[0] = zeta_in;
+    zeta[1] = zeta_in;
+    zeta[2] = zeta_in;
 
     // normalize the two input position quaternions
     double pq1_mag = sqrt(pq1[0]*pq1[0] + pq1[1]*pq1[1] + pq1[2]*pq1[2] + pq1[3]*pq1[3]);

@@ -28,6 +28,7 @@ int CmdStartDetumble(char *paramstr);
 int CmdImtqPWM(char *paramstr);
 int CmdConfigAutoImage(char *paramstr, auto_image_type *autoimgp);
 int CmdAutoImageOn(char *paramstr, auto_image_type *autoimgp);
+int CmdRotateParams(char *paramstr, double *ts, double *zeta);
 int CmdSunSensorMask(char *paramstr, int *ss_m);
 int CmdSunSensorScalar(char *paramstr, float *ss_s);
 int CmdConfigTelem0(char *paramstr);

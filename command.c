@@ -1557,6 +1557,33 @@ int CmdAutoImageOn(char *paramstr, auto_image_type *autoimgp)
     return err;
 }
 
+// Set rotate() parameters ts and zeta)
+int CmdRotateParams(char *paramstr, double *ts, double *zeta)
+{
+    int err = 0;
+    int n_param;              // number of parameters passed to command
+    // temporary variables for sscanf()
+    double ts_in, zeta_in;
+
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%lf %lf", &ts_in, &zeta_in);
+    if (n_param != 2)
+    {
+        sprintf(downlink_data,"RamSat: CmdRotateParams->wrong n_param: %d (expecting 2)",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
+    // copy parameters to output variables
+    *ts = ts_in;
+    *zeta = zeta_in;
+    
+    // return success message
+    sprintf(downlink_data,"RamSat: CmdRotateParams->Success: %lf %lf", *ts, *zeta);
+    he100_transmit_packet(he100_response, downlink_data);                
+    return err;
+}
+
 // Send a new sun sensor mask array (turn on/off individual channels)
 int CmdSunSensorMask(char *paramstr, int *ss_m)
 {

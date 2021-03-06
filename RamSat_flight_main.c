@@ -234,6 +234,8 @@ int main(void) {
     double jd1, jd2;        // times (julian date) for two most recent passes through triad()
     double dtime = 0.0;     // time difference between position quaternion calculations
     double min_dtime = 1.0; // minimum time between position quaternions for attitude control (sec)
+    double ts_in = 900.0;   // user specifiable parameter for damping time in rotate())
+    double zeta_in = 0.65;  // user specifiable parameter for zeta in rotate())
     int n_rotate = 0;
     int ss_m[8] = {1,1,1,1,1,1,1,1};   // sun sensor mask (1=use, 0=reject)
     float ss_s[8] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0}; // sun sensor scalar
@@ -800,6 +802,10 @@ int main(void) {
                             cmd_err = CmdAutoImageOn(cmd_paramstr, &autoimg);
                             break;
                             
+                        case 40: // set new values for ts and zeta
+                            cmd_err = CmdRotateParams(cmd_paramstr, &ts_in, &zeta_in);
+                            break;
+                            
                         case 70: // overwrite the default sun-sensor mask array
                             cmd_err = CmdSunSensorMask(cmd_paramstr, ss_m);
                             break;
@@ -1159,7 +1165,7 @@ int main(void) {
 
                         // calculate dipole to achieve nadir pointing through attitude control algorithm
                         // NB: on return, the pq1, pq2, and dq quaternions are normalized
-                        rotate(&dtime, pq1, pq2, dq, qe, torque, b_body, omega, dipole);
+                        rotate(ts_in, zeta_in, &dtime, pq1, pq2, dq, qe, torque, b_body, omega, dipole);
 
                         // Now transmit the one-minute beacon message
                         // disable UART2 interrupt
