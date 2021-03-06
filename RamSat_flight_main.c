@@ -58,12 +58,6 @@ telem_control_type telem_lev2;   // Level 2 control data
 // global variable for position and attitude data
 position_attitude_type posatt;
 
-//long int sspx1[256], sspx2[256];
-//long int ssnx1[256], ssnx2[256];
-//long int sspy1[256], sspy2[256];
-//long int ssny1[256], sspn2[256];
-//long int ssz[256];
-
 // Global ISR variables for timed events
 // This flag gets set as each minute elapses
 volatile int minute_elapsed = 0;
@@ -229,20 +223,22 @@ int main(void) {
     // flags controlling the main program loop
     int isNewTLE = 0;   // flag is set immediately after a new TLE is uplinked
     int isGoodTLE = 0;  // flag is set when sgp4 initialization is complete after a new TLE
+    int isAutoPWM = 0;  // flag to control PWM actuation
+    double autoPWM_time_remaining = 0.0; // max allowable time for PWM actuation before next command (sec)
     int isFirst;        // flag for the first time through position calculations with new TLE
     double pq1[4], pq2[4];  // two most recent position quaternions from triad()
     double jd1, jd2;        // times (julian date) for two most recent passes through triad()
     double dtime = 0.0;     // time difference between position quaternion calculations
     double min_dtime = 1.0; // minimum time between position quaternions for attitude control (sec)
-    double ts_in = 900.0;   // user specifiable parameter for damping time in rotate())
-    double zeta_in = 0.65;  // user specifiable parameter for zeta in rotate())
-    int n_rotate = 0;
+    double ts_in = 900.0;   // user specifiable parameter for settling time in rotate())
+    double zeta_in = 0.65;  // user specifiable parameter for damping coefficient in rotate())
     int ss_m[8] = {1,1,1,1,1,1,1,1};   // sun sensor mask (1=use, 0=reject)
     float ss_s[8] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0}; // sun sensor scalar
     // track maximum value for sun-sensor vectors
     // initialize with a small value so it can be used for division
     double sxybodymag_max = 1.0;
     float bcr3_thresh = 3.0; // threshold voltage for -Z panel indicating sunlight
+    imtq_resp_common imtq_common;      // iMTQ response from every command
     
     // data structure for the auto-imaging control data (off on startup)
     auto_image_type autoimg;
@@ -340,7 +336,7 @@ int main(void) {
             init_data.ants1_deploy_status_msb = ants_response[0];
             init_data.ants1_deploy_status_lsb = ants_response[1];
             // attempt to deploy all four antennas
-            //ants_deploy_all();
+            ants_deploy_all();
             // enter a status polling loop, checking every second until
             // all antennas are showing status deployed
             ants_deploy_status(ants_response);
@@ -469,7 +465,6 @@ int main(void) {
     // Initialize iMTQ
     // set the mtm time integration parameter
     // (current value is 6, which corresponds to 80 ms)
-    imtq_resp_common imtq_common;       // iMTQ response from every command
     imtq_resp_integ imtq_integ;         // iMTQ MTM integration time parameter
     imtq_set_mtm_integ(&imtq_common, &imtq_integ, 6);
     
@@ -565,10 +560,6 @@ int main(void) {
             if (autoimg.on && isGoodTLE && ~isFirst)
             {
                 // temp for testing
-                posatt.lon = -84.0;
-                posatt.cor_lat = 36.0;
-                posatt.res = 0.0;
-                posatt.offnadir_angle = 0.0;
                 if ((posatt.lon >= autoimg.min_lon) && (posatt.lon <= autoimg.max_lon))
                 {
                     if ((posatt.cor_lat >= autoimg.min_lat) && (posatt.cor_lat <= autoimg.max_lat))
@@ -790,10 +781,6 @@ int main(void) {
                             cmd_err = CmdStartDetumble(cmd_paramstr);
                             break;
                             
-                        case 20: // Manually activate magnetorquers in PWM mode
-                            cmd_err = CmdImtqPWM(cmd_paramstr);
-                            break;
-                            
                         case 30: // Set parameters for auto-imaging
                             cmd_err = CmdConfigAutoImage(cmd_paramstr, &autoimg);
                             break;
@@ -802,7 +789,15 @@ int main(void) {
                             cmd_err = CmdAutoImageOn(cmd_paramstr, &autoimg);
                             break;
                             
-                        case 40: // set new values for ts and zeta
+                        case 40: // Manually activate magnetorquers in PWM mode
+                            cmd_err = CmdImtqPWM(cmd_paramstr);
+                            break;
+                            
+                        case 41: // Enable autonomous PWM mode
+                            cmd_err = CmdAutoPWMOn(cmd_paramstr, &isAutoPWM, &autoPWM_time_remaining);
+                            break;
+                            
+                        case 42: // set new values for ts and zeta
                             cmd_err = CmdRotateParams(cmd_paramstr, &ts_in, &zeta_in);
                             break;
                             
@@ -828,6 +823,14 @@ int main(void) {
                             
                         case 86: // Set telemetry is_active on/off (all levels)
                             CmdTelemIsActive(cmd_paramstr);
+                            break;
+                            
+                        case 87: // Thank our sponsors!
+                            CmdThankYou();
+                            break;
+                            
+                        case 89: // KILL SWITCH!! Permanent radio shutdown, END OF MISSION!!
+                            CmdKillSwitch(cmd_paramstr, killcommand);
                             break;
                             
                         case 90: // Set post-deployment timer flag (pre-flight)
@@ -884,7 +887,6 @@ int main(void) {
             isNewTLE = 0;
             isGoodTLE = 1;
             isFirst = 1;   // indicate the first pass with new TLE
-            n_rotate = 0;
         }
         
         // If there is a good TLE, use it and RTC data to make an orbital prediction
@@ -1166,25 +1168,47 @@ int main(void) {
                         // calculate dipole to achieve nadir pointing through attitude control algorithm
                         // NB: on return, the pq1, pq2, and dq quaternions are normalized
                         rotate(ts_in, zeta_in, &dtime, pq1, pq2, dq, qe, torque, b_body, omega, dipole);
-
-                        // Now transmit the one-minute beacon message
-                        // disable UART2 interrupt
-                        /*
-                        _U2RXIE = 0;
-                        sprintf(downlink_msg,"RamSat: posatt test %lf : %.4lf %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf : %.4lf %.4lf %.4lf",
-                                (jd2-jd1), pq1[0], pq1[1], pq1[2], pq1[3], pq2[0], pq2[1], pq2[2], pq2[3], dq[0], dq[1], dq[2], dq[3], b_body[0], b_body[1], b_body[2], omega[0], omega[1], omega[2], dipole[0], dipole[1], dipole[2]);
-                        he100_transmit_packet(he100_response, downlink_msg);
-                        // reset the UART2 receive traps
-                        nhbytes = 0;
-                        ndbytes = 0;
-                        ishead_flag = 0;
-                        isdata_flag = 0;
-                        he100_receive = 0;
-                        // clear any overflow error, which also clears the receive buffer
-                        U2STAbits.OERR = 0;
-                        // restart the interrupt handler
-                        _U2RXIE = 1;
-                        */
+                        
+                        // maximum commandable dipole is +/- 0.2 Am^2 in any axis 
+                        // scale dipole vector to fit the largest axis
+                        double max_dipole_axis = 0.0;
+                        if (fabs(dipole[0]) > max_dipole_axis) max_dipole_axis = fabs(dipole[0]);
+                        if (fabs(dipole[1]) > max_dipole_axis) max_dipole_axis = fabs(dipole[1]);
+                        if (fabs(dipole[2]) > max_dipole_axis) max_dipole_axis = fabs(dipole[2]);
+                        
+                        // scale dipole if any axis is greater than allowable max
+                        double max_command_dipole = 0.2;
+                        if (max_dipole_axis > max_command_dipole)
+                        {
+                            double scale_dipole = max_command_dipole/max_dipole_axis;
+                            dipole[0] = dipole[0] * scale_dipole;
+                            dipole[1] = dipole[1] * scale_dipole;
+                            dipole[2] = dipole[2] * scale_dipole;
+                        }
+                        
+                        // now scale this dipole to allowable PWM range
+                        double max_pwm = 1000.0;
+                        signed short pwm_x = max_pwm * dipole[0]/max_command_dipole;
+                        signed short pwm_y = max_pwm * dipole[1]/max_command_dipole;
+                        signed short pwm_z = max_pwm * dipole[2]/max_command_dipole;
+                        
+                        // if auto PWM actuation is turned on, apply this PWM actuation
+                        // for the duration of minimum dtime between quaternion iterations
+                        if (isAutoPWM)
+                        {
+                            unsigned short msec = min_dtime * 1000.0;
+                            imtq_start_actpwm(&imtq_common, pwm_x, pwm_y, pwm_z, msec);
+                            // decrement max allowed time of actuation
+                            autoPWM_time_remaining -= dtime;
+                            // turn off auto PWM if time limit exceeded
+                            if (autoPWM_time_remaining < 0.0) isAutoPWM = 0;
+                        }
+                        else
+                        {
+                            pwm_x = 0.0;
+                            pwm_y = 0.0;
+                            pwm_z = 0.0;
+                        }
 
                         // once all orbital and attitude calculations are complete,
                         // populate the position and attitude data struct.
@@ -1259,6 +1283,12 @@ int main(void) {
                         posatt.nadir_body[0] = nadir_body[0];
                         posatt.nadir_body[1] = nadir_body[1];
                         posatt.nadir_body[2] = nadir_body[2];
+                        posatt.pwm_x = pwm_x;
+                        posatt.pwm_y = pwm_y;
+                        posatt.pwm_z = pwm_z;
+                        posatt.imtq_cc = imtq_common.cc;
+                        posatt.imtq_stat = imtq_common.stat;
+                        posatt.isAutoPWM = isAutoPWM;
 
                         // swap the current with previous pq and jd
                         pq1[0] = pq2[0];
@@ -1266,21 +1296,9 @@ int main(void) {
                         pq1[2] = pq2[2];
                         pq1[3] = pq2[3];
                         jd1 = jd2;
-
-                        /*
-                        n_rotate++;
-                        if (n_rotate > 100)
-                        {
-                            isGoodTLE = 0;
-                        }
-                        */
                     } // end of dtime > min_dtime
                 }  // end of not first pass
             }   // end of no error on sgp4
-            else
-            {
-                // will need some error handling here for SGP4 error
-            }
         }   // end of isGoodTLE
     }       // end of main program loop
 }
