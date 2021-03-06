@@ -446,6 +446,10 @@ void sat_lon_lat_elev( double jd, double *pos, double *lon, double *lat, double 
     {
         tlon = tlon + (2.0*pi);
     }
+    if (tlon > pi)
+    {
+        tlon = tlon - (2.0*pi);
+    }
     *lat = asin(pos[2]/dce);
     *lon = tlon;
     *elev = dce - earth_radius_in_km;

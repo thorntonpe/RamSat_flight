@@ -177,7 +177,7 @@ void ants_deploy_all()
     
     // fill the command bytes
     command[0] = cmd_id;
-    command[1] = 10;     // 10 seconds max to deploy per antenna
+    command[1] = 30;     // 10 seconds max to deploy per antenna
     // send the command
     write_ants_command(cmd_nbytes);    
 }

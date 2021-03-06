@@ -1018,18 +1018,35 @@ int CmdCurrentTelemetry(char* paramstr)
             
         case 6: // position and attitude telemetry
             // response header
-            sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving position and attitude telemetry, index %d", index);
+            sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving position and attitude telemetry #1, index %d", index);
             he100_transmit_packet(he100_response, downlink_data);
             // telemetry is already in the posatt data structure, as long as 
             // a TLE has been uploaded.
-            sprintf(downlink_data,"PosAtt Telem: %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf",
-                    posatt.jd, posatt.t_since, posatt.px_eci, posatt.py_eci, posatt.pz_eci,
-                    posatt.lon, posatt.lat, posatt.cor_lat, posatt.elev, posatt.lst,
-                    posatt.bx_eci, posatt.by_eci, posatt.bz_eci,
-                    posatt.bx_body, posatt.by_body, posatt.bz_body, posatt.ubx_eci, posatt.uby_eci, posatt.ubz_eci,
-                    posatt.ubx_body, posatt.uby_body, posatt.ubz_body, posatt.usx_eci, posatt.usy_eci, posatt.usz_eci,
-                    posatt.usx_body, posatt.usy_body, posatt.usz_body,
-                    posatt.pq1[0], posatt.pq1[1], posatt.pq1[2], posatt.pq1[3]);
+            sprintf(downlink_data,"PAT0 %16.7lf %6.0lf %6.0lf %6.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %4.0lf %7.3lf %7.3lf %7.3lf %5.3lf %4.0lf %4.0lf %4.0lf %4.0lf",
+                    posatt.jd, posatt.px_eci, posatt.py_eci, posatt.pz_eci, posatt.lst,
+                    posatt.ubx_eci*100.0, posatt.uby_eci*100.0, posatt.ubz_eci*100.0,
+                    posatt.ubx_body*100.0, posatt.uby_body*100.0, posatt.ubz_body*100.0,
+                    posatt.usx_eci*100.0, posatt.usy_eci*100.0, posatt.usz_eci*100.0,
+                    posatt.usx_body*100.0, posatt.usy_body*100.0, posatt.usz_body*100.0, posatt.res,
+                    posatt.pq1[0]*100.0, posatt.pq1[1]*100.0, posatt.pq1[2]*100, posatt.pq1[3]*100.0,
+                    posatt.pq2[0]*100.0, posatt.pq2[1]*100.0, posatt.pq2[2]*100, posatt.pq2[3]*100.0,
+                    posatt.dq[0]*100.0, posatt.dq[1]*100.0, posatt.dq[2]*100, posatt.dq[3]*100.0,
+                    posatt.omega[0]*100.0, posatt.omega[1]*100.0, posatt.omega[2]*100.0,
+                    posatt.torque[0]*1000000.0, posatt.torque[1]*1000000.0, posatt.torque[2]*1000000.0,
+                    posatt.dipole[0], posatt.dipole[1], posatt.dipole[2], posatt.dtime,
+                    posatt.offnadir_angle, posatt.nadir_body[0]*100.0, posatt.nadir_body[1]*100.0, posatt.nadir_body[2]*100.0);
+            he100_transmit_packet(he100_response, downlink_data);
+            break;
+            
+        case 9: // position and attitude telemetry
+            // response header
+            sprintf(downlink_data,"RamSat: CmdCurrentTelemetry->Retrieving position and attitude telemetry #2, index %d", index);
+            he100_transmit_packet(he100_response, downlink_data);
+            // telemetry is already in the posatt data structure, as long as 
+            // a TLE has been uploaded.
+            sprintf(downlink_data,"PAT1 %.2lf %.4lf %.2lf %.2lf %.2lf %.2lf %.2lf %hd %hd %hd %d",
+                    posatt.t_since, posatt.decimal_year, posatt.lon, posatt.lat, posatt.cor_lat, posatt.elev,
+                    posatt.sxybodymag_max, posatt.pwm_x, posatt.pwm_y, posatt.pwm_z, posatt.isAutoPWM);
             he100_transmit_packet(he100_response, downlink_data);
             break;
             
@@ -1409,76 +1426,6 @@ int CmdStartDetumble(char *paramstr)
     return err;
 }
 
-// begin a manual PWM actuation with iMTQ, specifying signed values from -1000 to 1000 for
-// each axis, and a duration in msec
-int CmdImtqPWM(char *paramstr)
-{
-    int err = 0;
-    int n_param;                       // number of parameters passed to command
-    signed short pwm_x, pwm_y, pwm_z;  // PWM in 0.1% (-1000 to 1000)
-    unsigned short msec;               // number of miliseconds to actuate magnetorquers
-    int do_report;                     // if set, do a report on coil current
-    imtq_resp_common imtq_common;      // iMTQ response from every command
-    imtq_resp_coilcur imtq_coilcur;    // iMTQ response for get_coil_current
-    float percent_x, percent_y, percent_z;
-    
-    // read parameter string, return if too few parameters
-    n_param = sscanf(paramstr,"%hd %hd %hd %hu %d",&pwm_x, &pwm_y, &pwm_z, &msec, &do_report);
-    if (n_param != 5)
-    {
-        sprintf(downlink_data,"RamSat: CmdImtqPWM->wrong n_param: %d (expecting 5)",n_param);
-        he100_transmit_packet(he100_response, downlink_data);                
-        return 1;
-    }
-    
-    percent_x = (float)pwm_x/10.0;
-    percent_y = (float)pwm_y/10.0;
-    percent_z = (float)pwm_z/10.0;
-    
-    // send iMTQ command to start the PWM actuation
-    imtq_start_actpwm(&imtq_common, pwm_x, pwm_y, pwm_z, msec);
-    // check the response and report status
-    if (imtq_common.cc == 0x07 && imtq_common.stat == 0x80)
-    {
-        // good iMTQ response
-        sprintf(downlink_data,"RamSat: iMTQ PWM active (%.1f %.1f %.1f) for %hu msec",
-                percent_x, percent_y, percent_z, msec);
-        he100_transmit_packet(he100_response, downlink_data);
-        
-        // if user requested reporting, gather and downlink coil current data
-        if (do_report)
-        {
-            imtq_get_coil_current(&imtq_common, &imtq_coilcur);
-            // check the response
-            if (imtq_common.cc == 0x44 && imtq_common.stat == 0x80)
-            {
-                // good response, downlink results
-                sprintf(downlink_data,"RamSat: iMTQ report coil currents: %hd %hd %hd",
-                        imtq_coilcur.x, imtq_coilcur.y, imtq_coilcur.z);
-                he100_transmit_packet(he100_response, downlink_data);
-            }
-            else
-            {
-                // error in iMTQ response
-                sprintf(downlink_data,"RamSat: CmdImtqPWM->iMTQ coilcur Error: cc=0x%02x, stat=0x%02x",
-                        imtq_common.cc,imtq_common.stat);
-                he100_transmit_packet(he100_response, downlink_data);
-                err = 1;
-            }
-            
-        } // end do_report
-    } // end good response to start PWM actuation
-    else
-    {
-        // error in iMTQ response
-        sprintf(downlink_data,"RamSat: CmdImtqPWM->iMTQ Error: cc=0x%02x, stat=0x%02x",
-                imtq_common.cc,imtq_common.stat);
-        he100_transmit_packet(he100_response, downlink_data);
-        err = 1;
-    }
-    return err;
-}
-
 int CmdConfigAutoImage(char *paramstr, auto_image_type *autoimgp)
 {
     int err = 0;
@@ -1553,6 +1500,104 @@ int CmdAutoImageOn(char *paramstr, auto_image_type *autoimgp)
     // return success message
     sprintf(downlink_data,"RamSat: CmdAutoImageOn->Success: %d %ld",
             autoimgp->on, autoimgp->time_since_last);
+    he100_transmit_packet(he100_response, downlink_data);                
+    return err;
+}
+
+// begin a manual PWM actuation with iMTQ, specifying signed values from -1000 to 1000 for
+// each axis, and a duration in msec
+int CmdImtqPWM(char *paramstr)
+{
+    int err = 0;
+    int n_param;                       // number of parameters passed to command
+    signed short pwm_x, pwm_y, pwm_z;  // PWM in 0.1% (-1000 to 1000)
+    unsigned short msec;               // number of miliseconds to actuate magnetorquers
+    int do_report;                     // if set, do a report on coil current
+    imtq_resp_common imtq_common;      // iMTQ response from every command
+    imtq_resp_coilcur imtq_coilcur;    // iMTQ response for get_coil_current
+    float percent_x, percent_y, percent_z;
+    
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%hd %hd %hd %hu %d",&pwm_x, &pwm_y, &pwm_z, &msec, &do_report);
+    if (n_param != 5)
+    {
+        sprintf(downlink_data,"RamSat: CmdImtqPWM->wrong n_param: %d (expecting 5)",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
+    percent_x = (float)pwm_x/10.0;
+    percent_y = (float)pwm_y/10.0;
+    percent_z = (float)pwm_z/10.0;
+    
+    // send iMTQ command to start the PWM actuation
+    imtq_start_actpwm(&imtq_common, pwm_x, pwm_y, pwm_z, msec);
+    // check the response and report status
+    if (imtq_common.cc == 0x07 && imtq_common.stat == 0x80)
+    {
+        // good iMTQ response
+        sprintf(downlink_data,"RamSat: iMTQ PWM active (%.1f %.1f %.1f) for %hu msec",
+                percent_x, percent_y, percent_z, msec);
+        he100_transmit_packet(he100_response, downlink_data);
+        
+        // if user requested reporting, gather and downlink coil current data
+        if (do_report)
+        {
+            imtq_get_coil_current(&imtq_common, &imtq_coilcur);
+            // check the response
+            if (imtq_common.cc == 0x44 && imtq_common.stat == 0x80)
+            {
+                // good response, downlink results
+                sprintf(downlink_data,"RamSat: iMTQ report coil currents: %hd %hd %hd",
+                        imtq_coilcur.x, imtq_coilcur.y, imtq_coilcur.z);
+                he100_transmit_packet(he100_response, downlink_data);
+            }
+            else
+            {
+                // error in iMTQ response
+                sprintf(downlink_data,"RamSat: CmdImtqPWM->iMTQ coilcur Error: cc=0x%02x, stat=0x%02x",
+                        imtq_common.cc,imtq_common.stat);
+                he100_transmit_packet(he100_response, downlink_data);
+                err = 1;
+            }
+            
+        } // end do_report
+    } // end good response to start PWM actuation
+    else
+    {
+        // error in iMTQ response
+        sprintf(downlink_data,"RamSat: CmdImtqPWM->iMTQ Error: cc=0x%02x, stat=0x%02x",
+                imtq_common.cc,imtq_common.stat);
+        he100_transmit_packet(he100_response, downlink_data);
+        err = 1;
+    }
+    return err;
+}
+
+// Set rotate() parameters ts and zeta)
+int CmdAutoPWMOn(char *paramstr, int *isAutoPWM, double *autoPWM_time_remaining)
+{
+    int err = 0;
+    int n_param;              // number of parameters passed to command
+    // temporary variables for sscanf()
+    double time_remaining;
+    int isAuto;
+
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%d %lf", &isAuto, &time_remaining);
+    if (n_param != 2)
+    {
+        sprintf(downlink_data,"RamSat: CmdAutoPWMOn->wrong n_param: %d (expecting 2)",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    
+    // copy parameters to output variables
+    *isAutoPWM = isAuto;
+    *autoPWM_time_remaining = time_remaining;
+    
+    // return success message
+    sprintf(downlink_data,"RamSat: CmdAutoPWMOn->Success: %d %lf", *isAutoPWM, *autoPWM_time_remaining);
     he100_transmit_packet(he100_response, downlink_data);                
     return err;
 }
@@ -1873,3 +1918,59 @@ void CmdResetPIC(void)
 
     exit(0);
 }
+
+// Thanks to our sponsors!!!
+void CmdThankYou(void)
+{
+    sprintf(downlink_data,"RamSat: Is made possible through the generosity of our sponsors...");
+    he100_transmit_packet(he100_response, downlink_data);
+    sprintf(downlink_data,"RamSat: A big ThankYou!! to Robertsville Middle School, Oak Ridge Schools...");
+    he100_transmit_packet(he100_response, downlink_data);
+    sprintf(downlink_data,"RamSat: ... NASA's Marshall Space Flight Center, Comcast...");
+    he100_transmit_packet(he100_response, downlink_data);
+    sprintf(downlink_data,"RamSat: ... NASA CubeSat Launch Initiative, CNS Y-12...");
+    he100_transmit_packet(he100_response, downlink_data);
+    sprintf(downlink_data,"RamSat: ... Oak Ridge National Laboratory, Pumpkin Space...");
+    he100_transmit_packet(he100_response, downlink_data);
+    sprintf(downlink_data,"RamSat: ... Starr Family Foundation, UCOR, Protomet...");
+    he100_transmit_packet(he100_response, downlink_data);
+    sprintf(downlink_data,"RamSat: ... and the Oak Ridge Public Schools Education Foundation!");
+    he100_transmit_packet(he100_response, downlink_data);
+}
+
+
+// Kill Switch command
+int CmdKillSwitch(char *paramstr, char *killcommand)
+{
+    int err = 0;
+    char passcode[256];
+    int n_param;              // number of parameters passed to command
+    
+    // read parameter string, return if too few parameters
+    n_param = sscanf(paramstr,"%s",passcode);
+    if (n_param != 1)
+    {
+        sprintf(downlink_data,"RamSat: CmdKillSwitch->wrong n_param: %d",n_param);
+        he100_transmit_packet(he100_response, downlink_data);                
+        return 1;
+    }
+    if (strcmp(passcode,killcommand) == 0)
+    {
+        sprintf(downlink_data,"RamSat: So Long, and Thanks For All The Fish!");
+        he100_transmit_packet(he100_response, downlink_data);
+        while (1)
+        {
+            eps_reset_watchdog();
+            eps_batvbus_reset();
+        }
+    }
+    else
+    {
+        sprintf(downlink_data,"RamSat: CmdKillSwitch->wrong passcode");
+        he100_transmit_packet(he100_response, downlink_data);                
+        err=1;
+    }
+    
+    return err;
+}
+    

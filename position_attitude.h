@@ -64,6 +64,12 @@ typedef struct
     double dipole[3];   // desired dipole (A m^2)
     double torque[3];   // torque (N m)
     double nadir_body[3]; // nadir-pointing unit vector in body coordinate
+    signed short pwm_x;       // PWM X actuation level (-1000 to 1000)
+    signed short pwm_y;       // PWM Y actuation level (-1000 to 1000)
+    signed short pwm_z;       // PWM Z actuation level (-1000 to 1000)
+    unsigned char imtq_cc;  // return from PWM actuation
+    unsigned char imtq_stat;// return from PWM actuation
+    int isAutoPWM;      // flag for PWM actuation
 
 } position_attitude_type;
 

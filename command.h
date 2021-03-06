@@ -26,6 +26,7 @@ int CmdCameraPower(char* paramstr);
 int CmdFileDelete(char *paramstr);
 int CmdStartDetumble(char *paramstr);
 int CmdImtqPWM(char *paramstr);
+int CmdAutoPWMOn(char *paramstr, int *isAutoPWM, double *autoPWM_time_remaining);
 int CmdConfigAutoImage(char *paramstr, auto_image_type *autoimgp);
 int CmdAutoImageOn(char *paramstr, auto_image_type *autoimgp);
 int CmdRotateParams(char *paramstr, double *ts, double *zeta);
@@ -38,6 +39,8 @@ int CmdTelemIsActive(char *paramstr);
 void CmdSetPDT(void);
 void CmdResetHe100(void);
 void CmdResetPIC(void);
+void CmdThankYou(void);
+int CmdKillSwitch(char *paramstr, char *killcommand);
 
 
 
